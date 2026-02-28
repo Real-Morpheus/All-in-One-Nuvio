@@ -8,22 +8,12 @@
       "description": "MoviesDrive - Movies and TV shows with multiple streaming servers",
       "version": "2.0.0",
       "author": "JK",
-      "supportedTypes": [
-        "movie",
-        "tv"
-      ],
+      "supportedTypes": ["movie", "tv"],
       "filename": "src/providers/moviesdrive.js",
       "enabled": true,
-      "formats": [
-        "mp4",
-        "mkv",
-        "m3u8"
-      ],
+      "formats": ["mp4", "mkv", "m3u8"],
       "logo": "https://moviesdrive.forum/favicon.ico",
-      "contentLanguage": [
-        "en",
-        "hi"
-      ]
+      "contentLanguage": ["en", "hi"]
     },
     {
       "id": "xdmovies",
