@@ -80,6 +80,19 @@
       "contentLanguage": ["en"]
     },
     {
+      "id": "kisskh",
+      "name": "Kisskh",
+      "description": "Asian Drama & Anime streaming",
+      "version": "1.0.0",
+      "author": "Michat88",
+      "supportedTypes": ["movie", "tv"],
+      "filename": "providers/kisskh.js",
+      "enabled": true,
+      "formats": ["mp4", "m3u8"],
+      "logo": "https://i.postimg.cc/2yLnTzPP/kisskh.jpg",
+      "contentLanguage": ["en", "ko"]
+    },
+    {
       "id": "dramafull",
       "name": "DramaFull",
       "description": "DramaFull provider for Nuvio. Specializes in Asian dramas.",
