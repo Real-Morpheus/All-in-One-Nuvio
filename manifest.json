@@ -1,6 +1,6 @@
 {
-  "name": "JK Nuvio",
-  "version": "3.0.0",
+  "name": "D3adlyRocket",
+  "version": "1.0.0",
   "scrapers": [
     {
       "id": "moviesdrive",
@@ -67,17 +67,17 @@
       "contentLanguage": ["en", "hi"]
     },
     { 
-      "id": "movies4u",
-      "name": "Movies4u",
-      "description": "Movies4u provider for Nuvio.",
-      "version": "1.0.1",
+      "id": "dramafull",
+      "name": "DramaFull",
+      "description": "DramaFull provider for Nuvio. Specializes in Asian dramas.",
+      "version": "1.0.0",
       "author": "User",
-      "supportedTypes": ["movie"],
-      "filename": "src/providers/movies4u.js",
+      "supportedTypes": ["movie", "tv"],
+      "filename": "src/providers/dramafull.js",
       "enabled": true,
       "formats": ["mp4", "mkv", "m3u8"],
-      "logo": "https://i.postimg.cc/J0QG1QhQ/FB-IMG-1772347875168.jpg",
-      "contentLanguage": ["en", "hi", "ta"] 
+      "logo": "https://dramafull.cc/favicon.ico",
+      "contentLanguage": ["en", "ko", "zh", "ja"] 
     }
   ]
 }
