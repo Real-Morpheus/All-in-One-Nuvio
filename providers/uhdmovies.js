@@ -253,9 +253,17 @@ async function extractDownloadLinks(movieUrl, targetYear = null) {
     const movieTitle = $('h1').first().text().trim();
 
     // Find all download links (the new SID links) and their associated quality information
-    $('a[href*="tech."], a[href*="driveleech"], a[href*="video-leech"], a[href*="video-seed"]').each((index, element) => {
+    $('a').each((index, element) => {
       const link = $(element).attr('href');
+if (!link) return;
 
+  if (
+    link.includes('drive') ||
+    link.includes('gdtot') ||
+    link.includes('download') ||
+    link.includes('hubcloud') ||
+    link.includes('tech')
+  ) {
       if (link && !links.some(item => item.url === link)) {
         let quality = 'Unknown Quality';
         let size = 'Unknown';
