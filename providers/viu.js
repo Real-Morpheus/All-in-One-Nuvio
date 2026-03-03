@@ -1,89 +1,66 @@
-const BASE = 'https://www.viu.com';
-const API = 'https://api.viu.com';
-const NAME = 'viu';
-
-const HEADERS = {
+var DEFAULT_HEADERS = {
+  'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+  'Accept-Language': 'ar,en;q=0.9',
   'Accept': 'application/json',
-  'Accept-Language': 'en,ar;q=0.9',
-  'Referer': BASE,
-  'x-client-with': 'viu_web',
-  'x-country-code': 'SG',
-  'x-language-code': 'en'
 };
 
-async function http(url) {
-  const res = await fetch(url, { headers: HEADERS });
-  if (!res.ok) throw new Error('HTTP ' + res.status);
-  return res.json();
+var BASE = 'https://viu.com';
+var API = 'https://api.viu.com';
+var NAME = 'viu';
+
+var VIU_HEADERS = Object.assign({}, DEFAULT_HEADERS, {
+  'x-client-with': 'viu.com',
+  'x-country-code': 'EG',
+  'x-language-code': 'ar',
+  'Referer': BASE,
+});
+
+function httpGetJson(url) {
+  return fetch(url, { headers: VIU_HEADERS }).then(function(res) {
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    return res.json();
+  });
 }
 
-async function search(title) {
-  const url =
-    API +
-    '/cms/api/en/search/one?keyword=' +
-    encodeURIComponent(title) +
-    '&platform_flag_label=web&area_id=1&language_flag_id=1';
+function getStreams(tmdbId, mediaType, season, episode) {
+  console.log('[' + NAME + '] getStreams:', tmdbId, mediaType, season, episode);
+  var searchUrl = API + '/cms/api/ar/search/one?keyword=' + encodeURIComponent(tmdbId)
+    + '&platform_flag_label=web&area_id=1&language_flag_id=1';
 
-  const json = await http(url);
-  return json?.data?.series || [];
-}
+  return httpGetJson(searchUrl).then(function(json) {
+    var series = (json && json.data && json.data.series) ? json.data.series : [];
+    if (!series.length) return [];
+    var s = series[0];
+    var episodesUrl = API + '/cms/api/ar/category/product?series_id=' + s.series_id
+      + '&platform_flag_label=web&area_id=1&language_flag_id=1';
 
-async function episodes(seriesId) {
-  const url =
-    API +
-    '/cms/api/en/category/product?series_id=' +
-    seriesId +
-    '&platform_flag_label=web&area_id=1&language_flag_id=1';
+    return httpGetJson(episodesUrl).then(function(epJson) {
+      var episodes = (epJson && epJson.data && epJson.data.product) ? epJson.data.product : [];
+      var ep = episodes[0];
+      for (var i = 0; i < episodes.length; i++) {
+        if (episodes[i].number == (episode || 1)) { ep = episodes[i]; break; }
+      }
+      if (!ep) return [];
 
-  const json = await http(url);
-  return json?.data?.product || [];
-}
+      var streamUrl = API + '/playback/api/getVodSrc?platform_flag_label=web&product_id=' + ep.product_id
+        + '&area_id=1&language_flag_id=1';
 
-async function streams(productId) {
-  const url =
-    API +
-    '/playback/api/getVodSrc?platform_flag_label=web' +
-    '&product_id=' +
-    productId +
-    '&area_id=1&language_flag_id=1&os_flag=web&device_id=web';
-
-  const json = await http(url);
-
-  const out = [];
-  const list = json?.data?.stream || json?.data?.streams || {};
-
-  for (const q in list) {
-    const u = list[q];
-    if (typeof u === 'string' && u.startsWith('http')) {
-      out.push({
-        name: NAME,
-        title: 'VIU ' + q,
-        url: u,
-        quality: q,
-        headers: { Referer: BASE }
+      return httpGetJson(streamUrl).then(function(sJson) {
+        var streams = [];
+        var streamList = (sJson && sJson.data && sJson.data.stream) ? sJson.data.stream : {};
+        Object.keys(streamList).forEach(function(quality) {
+          var u = streamList[quality];
+          if (u && u.indexOf('http') === 0) {
+            streams.push({ name: NAME, title: quality, url: u, quality: quality, headers: { Referer: BASE } });
+          }
+        });
+        return streams;
       });
-    }
-  }
-
-  return out;
+    });
+  }).catch(function(err) {
+    console.error('[' + NAME + '] Error:', err.message);
+    return [];
+  });
 }
 
-async function getStreams(tmdbId, type, season, episode, info) {
-  try {
-    const title = info?.title || info?.name;
-    if (!title) return [];
-
-    const results = await search(title);
-    if (!results.length) return [];
-
-    const series = results[0];
-    const eps = await episodes(series.series_id);
-
-    if (!eps.length) return [];
-
-    let ep = eps[0];
-
-    if (type === 'tv') {
-      ep =
-        eps.find(
-          e =>
+module.exports = { getStreams };
