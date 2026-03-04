@@ -1,13 +1,13 @@
 const cheerio = require("cheerio-without-node-native")
 
-const MIRRORS = [
+const UA =
+  "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120 Safari/537.36"
+
+const DOMAINS = [
   "https://uhdmovies.email",
   "https://uhdmovies.fyi",
   "https://uhdmovies.zip"
 ]
-
-const UA =
-  "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120 Safari/537.36"
 
 async function request(url) {
   const res = await fetch(url, {
@@ -16,21 +16,21 @@ async function request(url) {
 
   if (!res.ok) throw new Error("HTTP " + res.status)
 
-  return await res.text()
+  return res.text()
 }
 
 async function getDomain() {
-  for (const d of MIRRORS) {
+  for (const d of DOMAINS) {
     try {
       const r = await fetch(d, { headers: { "User-Agent": UA } })
       if (r.ok) return d
     } catch {}
   }
 
-  return MIRRORS[0]
+  return DOMAINS[0]
 }
 
-function extractQuality(text) {
+function quality(text) {
   if (!text) return "HD"
 
   text = text.toLowerCase()
@@ -44,16 +44,17 @@ function extractQuality(text) {
 
 module.exports = {
 
-  id: "uhdmovies",
   name: "UHDMovies",
+
+  domains: DOMAINS,
 
   async search(query) {
 
     const domain = await getDomain()
 
-    const url = `${domain}/?s=${encodeURIComponent(query)}`
-
-    const html = await request(url)
+    const html = await request(
+      `${domain}/?s=${encodeURIComponent(query)}`
+    )
 
     const $ = cheerio.load(html)
 
@@ -66,8 +67,7 @@ module.exports = {
       if (!link) return
 
       const title =
-        $(el).find("h2,h3,h1").first().text().trim() ||
-        $(el).find("a").first().attr("title")
+        $(el).find("h2,h3,h1").first().text().trim()
 
       if (!title) return
 
@@ -80,13 +80,13 @@ module.exports = {
     return results
   },
 
-  async scrape(result) {
+  async sources(result) {
 
     const html = await request(result.url)
 
     const $ = cheerio.load(html)
 
-    const links = []
+    const streams = []
 
     $("a").each((i, el) => {
 
@@ -99,16 +99,17 @@ module.exports = {
         href.includes("video-seed") ||
         href.includes("video-leech")
       ) {
+
         const text = $(el).parent().text()
 
-        links.push({
-          name: "UHDMovies",
-          title: extractQuality(text),
+        streams.push({
+          source: "UHDMovies",
+          quality: quality(text),
           url: href
         })
       }
     })
 
-    return links
+    return streams
   }
 }
