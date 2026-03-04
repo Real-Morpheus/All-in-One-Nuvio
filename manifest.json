@@ -180,21 +180,8 @@
       "filename": "providers/vixsrc.js",
       "enabled": true,
       "formats": ["mp4", "m3u8"],
-      "logo": "",
+      "logo": "https://i.postimg.cc/tJP8zc5K/vixsrc.png",
       "contentLanguage": ["en"]
-    },
-    {
-      "id": "domty",
-      "name": "Domty",
-      "description": "streaming",
-      "version": "1.0.0",
-      "author": "Jellter",
-      "supportedTypes": ["movie", "tv"],
-      "filename": "providers/domty.js",
-      "enabled": true,
-      "formats": ["mp4", "mkv", "m3u8"],
-      "logo": "",
-      "contentLanguage": ["en", "ar"]
     },
     {
       "id": "kisskh",
