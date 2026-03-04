@@ -1,53 +1,60 @@
-const NAME = "viu";
+const NAME = "Viu";
 
 async function getStreams(tmdbId, type, season, episode) {
   console.log("[viu] getStreams:", tmdbId, type, season, episode);
 
-  try {
-    let api;
+  const s = season || 1;
+  const e = episode || 1;
 
-    if (type === "movie") {
-      api = `https://vidsrc.to/ajax/embed/episode/${tmdbId}`;
-    } else {
-      const s = season || 1;
-      const e = episode || 1;
-      api = `https://vidsrc.to/ajax/embed/episode/${tmdbId}/${s}/${e}`;
+  const streams = [];
+
+  const providers = [
+    {
+      name: "VidSrc",
+      movie: `https://vidsrc.xyz/embed/movie/${tmdbId}`,
+      tv: `https://vidsrc.xyz/embed/tv/${tmdbId}/${s}/${e}`,
+      referer: "https://vidsrc.xyz/"
+    },
+    {
+      name: "VidSrc.to",
+      movie: `https://vidsrc.to/embed/movie/${tmdbId}`,
+      tv: `https://vidsrc.to/embed/tv/${tmdbId}/${s}/${e}`,
+      referer: "https://vidsrc.to/"
+    },
+    {
+      name: "2Embed",
+      movie: `https://www.2embed.cc/embed/${tmdbId}`,
+      tv: `https://www.2embed.cc/embedtv/${tmdbId}&s=${s}&e=${e}`,
+      referer: "https://www.2embed.cc/"
+    },
+    {
+      name: "MultiEmbed",
+      movie: `https://multiembed.mov/?video_id=${tmdbId}&tmdb=1`,
+      tv: `https://multiembed.mov/?video_id=${tmdbId}&tmdb=1&s=${s}&e=${e}`,
+      referer: "https://multiembed.mov/"
+    },
+    {
+      name: "SuperEmbed",
+      movie: `https://multiembed.mov/directstream.php?video_id=${tmdbId}&tmdb=1`,
+      tv: `https://multiembed.mov/directstream.php?video_id=${tmdbId}&tmdb=1&s=${s}&e=${e}`,
+      referer: "https://multiembed.mov/"
     }
+  ];
 
-    const res = await fetch(api, {
+  for (const p of providers) {
+    streams.push({
+      name: NAME,
+      title: p.name,
+      url: type === "movie" ? p.movie : p.tv,
+      quality: "auto",
       headers: {
-        "User-Agent": "Mozilla/5.0",
-        Referer: "https://vidsrc.to/"
+        Referer: p.referer,
+        "User-Agent": "Mozilla/5.0"
       }
     });
-
-    const json = await res.json();
-
-    if (!json || !json.result) {
-      console.log("[viu] no results");
-      return [];
-    }
-
-    const streams = [];
-
-    for (const s of json.result) {
-      streams.push({
-        name: NAME,
-        title: s.title || "stream",
-        url: s.url,
-        quality: "auto",
-        headers: {
-          Referer: "https://vidsrc.to/",
-          "User-Agent": "Mozilla/5.0"
-        }
-      });
-    }
-
-    return streams;
-  } catch (err) {
-    console.log("[viu] error:", err.message);
-    return [];
   }
+
+  return streams;
 }
 
 module.exports = { getStreams };
