@@ -171,17 +171,17 @@
       "contentLanguage": ["en"]
     },
     {
-      "id": "viu",
-      "name": "Viu",
-      "description": "Asian Drama streaming",
+      "id": "domty",
+      "name": "Domty",
+      "description": "streaming",
       "version": "1.0.0",
       "author": "Jellter",
       "supportedTypes": ["movie", "tv"],
-      "filename": "providers/viu.js",
+      "filename": "providers/domty.js",
       "enabled": true,
-      "formats": ["mp4", "m3u8"],
+      "formats": ["mp4", "mkv", "m3u8"],
       "logo": "",
-      "contentLanguage": ["ko", "ar", "zh"]
+      "contentLanguage": ["en", "ar"]
     },
     {
       "id": "kisskh",
