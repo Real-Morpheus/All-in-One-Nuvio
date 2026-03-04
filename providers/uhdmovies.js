@@ -1,115 +1,81 @@
 const cheerio = require("cheerio-without-node-native")
 
-const UA =
-  "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120 Safari/537.36"
-
-const DOMAINS = [
-  "https://uhdmovies.email",
-  "https://uhdmovies.fyi",
-  "https://uhdmovies.zip"
-]
+const BASE = "https://uhdmovies.email"
 
 async function request(url) {
   const res = await fetch(url, {
-    headers: { "User-Agent": UA }
+    headers: {
+      "User-Agent": "Mozilla/5.0"
+    }
   })
 
-  if (!res.ok) throw new Error("HTTP " + res.status)
-
-  return res.text()
+  return await res.text()
 }
 
-async function getDomain() {
-  for (const d of DOMAINS) {
-    try {
-      const r = await fetch(d, { headers: { "User-Agent": UA } })
-      if (r.ok) return d
-    } catch {}
-  }
+async function search(title) {
 
-  return DOMAINS[0]
+  const html = await request(`${BASE}/?s=${encodeURIComponent(title)}`)
+
+  const $ = cheerio.load(html)
+
+  const results = []
+
+  $("article a[href*='download']").each((i, el) => {
+
+    const link = $(el).attr("href")
+    const name = $(el).text().trim()
+
+    if (!link || !name) return
+
+    results.push({
+      title: name,
+      url: link
+    })
+  })
+
+  return results
 }
 
-function quality(text) {
-  if (!text) return "HD"
+async function getStreams(url) {
 
-  text = text.toLowerCase()
+  const html = await request(url)
 
-  if (text.includes("2160") || text.includes("4k")) return "4K"
-  if (text.includes("1080")) return "1080p"
-  if (text.includes("720")) return "720p"
+  const $ = cheerio.load(html)
 
-  return "HD"
+  const streams = []
+
+  $("a").each((i, el) => {
+
+    const href = $(el).attr("href")
+
+    if (!href) return
+
+    if (
+      href.includes("driveleech") ||
+      href.includes("tech.") ||
+      href.includes("seed") ||
+      href.includes("leech")
+    ) {
+
+      streams.push({
+        name: "UHDMovies",
+        url: href
+      })
+    }
+  })
+
+  return streams
 }
 
 module.exports = {
-
   name: "UHDMovies",
 
-  domains: DOMAINS,
+  async getStreams(meta) {
 
-  async search(query) {
+    const results = await search(meta.title)
 
-    const domain = await getDomain()
+    if (!results.length) return []
 
-    const html = await request(
-      `${domain}/?s=${encodeURIComponent(query)}`
-    )
-
-    const $ = cheerio.load(html)
-
-    const results = []
-
-    $("article, .post, .blog-item").each((i, el) => {
-
-      const link = $(el).find("a[href*='download']").attr("href")
-
-      if (!link) return
-
-      const title =
-        $(el).find("h2,h3,h1").first().text().trim()
-
-      if (!title) return
-
-      results.push({
-        title,
-        url: link.startsWith("http") ? link : domain + link
-      })
-    })
-
-    return results
-  },
-
-  async sources(result) {
-
-    const html = await request(result.url)
-
-    const $ = cheerio.load(html)
-
-    const streams = []
-
-    $("a").each((i, el) => {
-
-      const href = $(el).attr("href")
-      if (!href) return
-
-      if (
-        href.includes("driveleech") ||
-        href.includes("tech.") ||
-        href.includes("video-seed") ||
-        href.includes("video-leech")
-      ) {
-
-        const text = $(el).parent().text()
-
-        streams.push({
-          source: "UHDMovies",
-          quality: quality(text),
-          url: href
-        })
-      }
-    })
-
-    return streams
+    return await getStreams(results[0].url)
   }
 }
