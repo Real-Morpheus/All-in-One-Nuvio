@@ -1,81 +1,123 @@
-const cheerio = require("cheerio-without-node-native")
+console.log('[UHDMovies] Initializing UHDMovies scraper');
 
-const BASE = "https://uhdmovies.email"
+const TMDB_API_KEY = "439c478a771f35c05022f9feabcca01c";
+const BASE = "https://uhdmovies.zip";
+const TIMEOUT = 60000;
 
-async function request(url) {
-  const res = await fetch(url, {
-    headers: {
-      "User-Agent": "Mozilla/5.0"
-    }
-  })
-
-  return await res.text()
+function makeRequest(url, options = {}) {
+    return fetch(url, {
+        timeout: TIMEOUT,
+        headers: {
+            'User-Agent': 'Mozilla/5.0',
+            'Accept': '*/*',
+            ...options.headers
+        },
+        ...options
+    }).then(r => {
+        if (!r.ok) throw new Error(`HTTP ${r.status}`);
+        return r;
+    });
 }
 
-async function search(title) {
+function searchUHD(title, year) {
+    const query = encodeURIComponent(title + " " + year);
+    const url = `${BASE}/?s=${query}`;
 
-  const html = await request(`${BASE}/?s=${encodeURIComponent(title)}`)
+    console.log("[UHDMovies] Search:", url);
 
-  const $ = cheerio.load(html)
+    return makeRequest(url)
+        .then(r => r.text())
+        .then(html => {
 
-  const results = []
+            const results = [];
 
-  $("article a[href*='download']").each((i, el) => {
+            const regex = /<a href="([^"]+)"[^>]*rel="bookmark"/g;
+            let m;
 
-    const link = $(el).attr("href")
-    const name = $(el).text().trim()
+            while ((m = regex.exec(html)) !== null) {
+                results.push(m[1]);
+            }
 
-    if (!link || !name) return
-
-    results.push({
-      title: name,
-      url: link
-    })
-  })
-
-  return results
+            return results;
+        });
 }
 
-async function getStreams(url) {
+function extractStreams(pageUrl) {
 
-  const html = await request(url)
+    console.log("[UHDMovies] Extract page:", pageUrl);
 
-  const $ = cheerio.load(html)
+    return makeRequest(pageUrl)
+        .then(r => r.text())
+        .then(html => {
 
-  const streams = []
+            const streams = [];
 
-  $("a").each((i, el) => {
+            const regex = /(https?:\/\/[^"' ]+\.(mkv|mp4))/gi;
+            let m;
 
-    const href = $(el).attr("href")
+            while ((m = regex.exec(html)) !== null) {
 
-    if (!href) return
+                const url = m[1];
 
-    if (
-      href.includes("driveleech") ||
-      href.includes("tech.") ||
-      href.includes("seed") ||
-      href.includes("leech")
-    ) {
+                let quality = "Unknown";
 
-      streams.push({
-        name: "UHDMovies",
-        url: href
-      })
-    }
-  })
+                if (url.includes("2160")) quality = "2160p";
+                else if (url.includes("1080")) quality = "1080p";
+                else if (url.includes("720")) quality = "720p";
 
-  return streams
+                streams.push({
+                    name: "UHDMovies",
+                    title: "UHDMovies " + quality,
+                    url: url,
+                    quality: quality,
+                    provider: "uhdmovies"
+                });
+            }
+
+            return streams;
+        });
 }
 
-module.exports = {
-  name: "UHDMovies",
+function invokeUHD(title, year) {
 
-  async getStreams(meta) {
+    return searchUHD(title, year)
+        .then(results => {
 
-    const results = await search(meta.title)
+            if (!results.length) return [];
 
-    if (!results.length) return []
+            return extractStreams(results[0]);
+        });
+}
 
-    return await getStreams(results[0].url)
-  }
+function getStreams(tmdbId, mediaType = 'movie', season = null, episode = null) {
+
+    console.log(`[UHDMovies] Fetching TMDB ${tmdbId}`);
+
+    const tmdbUrl = `https://api.themoviedb.org/3/${mediaType === 'tv' ? 'tv' : 'movie'}/${tmdbId}?api_key=${TMDB_API_KEY}`;
+
+    return makeRequest(tmdbUrl)
+        .then(r => r.json())
+        .then(tmdb => {
+
+            const title = mediaType === 'tv' ? tmdb.name : tmdb.title;
+            const year = mediaType === 'tv'
+                ? tmdb.first_air_date?.substring(0,4)
+                : tmdb.release_date?.substring(0,4);
+
+            if (!title) return [];
+
+            console.log("[UHDMovies] TMDB:", title, year);
+
+            return invokeUHD(title, year);
+        })
+        .catch(err => {
+            console.log("[UHDMovies] Error", err);
+            return [];
+        });
+}
+
+if (typeof module !== 'undefined' && module.exports) {
+    module.exports = { getStreams };
+} else {
+    global.getStreams = getStreams;
 }
