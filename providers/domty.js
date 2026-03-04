@@ -1,117 +1,78 @@
-console.error("DOMTY_PROVIDER_STARTED");
-console.log('[DOMTY] Provider Loaded');
-
-const TMDB = "https://api.themoviedb.org/3";
-const KEY = "1";
-
-const BASE_HEADERS = {
-  "User-Agent":
-    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120 Safari/537.36",
-  Accept: "*/*",
-};
+console.log("[DOMTY] Provider Loaded");
 
 const SITES = [
   "https://mycima.horse",
   "https://fajer.show",
   "https://ak.sv",
-  "https://cimawbas.org",
+  "https://cimawbas.org"
 ];
 
+const HEADERS = {
+  "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120 Safari/537.36",
+  Accept: "*/*"
+};
+
 function request(url, headers = {}) {
-  return fetch(url, {
-    headers: { ...BASE_HEADERS, ...headers },
-  }).then((r) => r.text());
+  return fetch(url, { headers: { ...HEADERS, ...headers } }).then(r => r.text());
 }
 
-function getTitle(id, type) {
-  return fetch(`${TMDB}/${type}/${id}?api_key=${KEY}`)
-    .then((r) => r.json())
-    .then((d) => d.title || d.name || id)
-    .catch(() => id);
+// search site for movie title
+function search(site, title) {
+  const url = `${site}/?s=${encodeURIComponent(title)}`;
+  return request(url).then(html => {
+    const match = html.match(/<a href="([^"]+)"[^>]*>(.*?)<\/a>/i);
+    return match ? match[1] : null;
+  });
 }
 
+// get iframe player URL from page
 function findPlayer(html) {
   const match = html.match(/<iframe[^>]+src="([^"]+)"/i);
   return match ? match[1] : null;
 }
 
+// get actual video link from player page
 function findStream(html) {
-  const m3u8 = html.match(/https?:\/\/[^"' ]+\.m3u8[^"' ]*/i);
+  const m3u8 = html.match(/https?:\/\/[^"' ]+\.m3u8/i);
   if (m3u8) return m3u8[0];
-
-  const mp4 = html.match(/https?:\/\/[^"' ]+\.mp4[^"' ]*/i);
+  const mp4 = html.match(/https?:\/\/[^"' ]+\.mp4/i);
   if (mp4) return mp4[0];
-
   return null;
 }
 
-function search(site, query) {
-  const url = `${site}/?s=${encodeURIComponent(query)}`;
-
-  return request(url).then((html) => {
-    const m = html.match(/<a href="([^"]+)"[^>]*>(.*?)<\/a>/i);
-    return m ? m[1] : null;
-  });
-}
-
 function scrapePage(url) {
-  return request(url).then((html) => {
+  return request(url).then(html => {
     const iframe = findPlayer(html);
     if (!iframe) return null;
-
-    return request(iframe, { Referer: url }).then((playerHtml) => {
-      return findStream(playerHtml);
-    });
+    return request(iframe, { Referer: url }).then(playerHtml => findStream(playerHtml));
   });
 }
 
+// try all sites until one gives a stream
 function trySites(title) {
   let index = 0;
-
   function next() {
     if (index >= SITES.length) return Promise.resolve(null);
-
     const site = SITES[index++];
-
     return search(site, title)
-      .then((url) => {
-        if (!url) return next();
-        return scrapePage(url);
-      })
-      .then((stream) => {
-        if (stream) return stream;
-        return next();
-      })
+      .then(url => url ? scrapePage(url) : next())
+      .then(stream => stream ? stream : next())
       .catch(next);
   }
-
   return next();
 }
 
-function getStreams(tmdbId, type = "movie") {
-  console.log("[DOMTY] Fetching", tmdbId);
-
-  return getTitle(tmdbId, type)
-    .then((title) => {
-      console.log("[DOMTY] Title:", title);
-      return trySites(title);
-    })
-    .then((stream) => {
-      if (!stream) {
-        console.log("[DOMTY] No streams found");
-        return { sources: [], subtitles: [] };
-      }
-
-      return {
-        sources: [
-          {
-            url: stream,
-            quality: "HD",
-            type: stream.includes("m3u8") ? "hls" : "mp4",
-          },
-        ],
-        subtitles: [],
-      };
+// main function Nuvio calls
+function getStreams(tmdbId, mediaType = "movie") {
+  console.log("[DOMTY] Fetching streams for TMDB ID:", tmdbId);
+  // Use TMDB API to get the title
+  return fetch(`https://api.themoviedb.org/3/${mediaType}/${tmdbId}?api_key=1`)
+    .then(r => r.json())
+    .then(data => data.title || data.name || tmdbId)
+    .then(title => trySites(title))
+    .then(stream => {
+      if (!stream) return { sources: [], subtitles: [] };
+      return { sources: [{ url: stream, quality: "HD", type: stream.includes(".m3u8") ? "hls" : "mp4" }], subtitles: [] };
     });
 }
 
