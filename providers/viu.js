@@ -1,46 +1,54 @@
-import fetch from "node-fetch";
+const NAME = "viu";
 
-const PROVIDER_NAME = "Viu";
+async function extractStream(url) {
+  try {
+    const res = await fetch(url, {
+      headers: {
+        "User-Agent": "Mozilla/5.0",
+        "Referer": "https://vidsrc.to/"
+      }
+    });
 
-async function extractStream(embedUrl) {
-  const res = await fetch(embedUrl, {
-    headers: {
-      "User-Agent": "Mozilla/5.0",
-      Referer: "https://vidsrc.to/"
-    }
-  });
+    const html = await res.text();
 
-  const html = await res.text();
+    const match =
+      html.match(/file:\s*"(https:[^"]+\.m3u8[^"]*)"/) ||
+      html.match(/"(https:[^"]+\.m3u8[^"]*)"/);
 
-  const m3u8 =
-    html.match(/file:\s*"(https:[^"]+\.m3u8[^"]*)"/) ||
-    html.match(/"(https:[^"]+\.m3u8[^"]*)"/);
+    if (!match) return null;
 
-  if (!m3u8) return null;
-
-  return m3u8[1];
+    return match[1];
+  } catch (err) {
+    console.log("[viu] extract error:", err.message);
+    return null;
+  }
 }
 
-async function streams(ctx) {
-  const { type, tmdbId, season, episode } = ctx;
-
-  let embed;
-
-  if (type === "movie") {
-    embed = `https://vidsrc.to/embed/movie/${tmdbId}`;
-  } else {
-    embed = `https://vidsrc.to/embed/tv/${tmdbId}/${season}/${episode}`;
-  }
+async function getStreams(tmdbId, type, season, episode) {
+  console.log("[viu] getStreams:", tmdbId, type, season, episode);
 
   try {
+    let embed;
+
+    if (type === "movie") {
+      embed = `https://vidsrc.to/embed/movie/${tmdbId}`;
+    } else {
+      const s = season || 1;
+      const e = episode || 1;
+      embed = `https://vidsrc.to/embed/tv/${tmdbId}/${s}/${e}`;
+    }
+
     const stream = await extractStream(embed);
 
-    if (!stream) return [];
+    if (!stream) {
+      console.log("[viu] no stream found");
+      return [];
+    }
 
     return [
       {
-        name: PROVIDER_NAME,
-        title: "VidSrc HLS",
+        name: NAME,
+        title: "VidSrc",
         url: stream,
         quality: "auto",
         headers: {
@@ -50,16 +58,9 @@ async function streams(ctx) {
       }
     ];
   } catch (err) {
-    console.log("[viu] extract error:", err.message);
+    console.log("[viu] error:", err.message);
     return [];
   }
 }
 
-export default {
-  name: "viu",
-  displayName: "Viu",
-  async streams(ctx) {
-    console.log("[viu] getStreams", ctx.title);
-    return await streams(ctx);
-  }
-};
+module.exports = { getStreams };
