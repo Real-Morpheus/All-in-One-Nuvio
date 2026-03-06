@@ -128,7 +128,7 @@
       "filename": "src/providers/movies4u.js",
       "enabled": true,
       "formats": ["mp4", "m3u8"],
-      "logo": "",
+      "logo": "https://i.postimg.cc/J0QG1QhQ/movies4u.jpg",
       "contentLanguage": ["en", "hi", "ta"]
     },
     {
