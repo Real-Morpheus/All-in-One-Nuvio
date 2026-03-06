@@ -1,12 +1,15 @@
+const BASE = "https://movix.blog";
+const TMDB = "https://api.themoviedb.org/3/";
+const KEY = "8d6d91784c04f98f6e241852615c441b";
+
 async function getStreams(tmdbId, mediaType, season, episode) {
 
     try {
 
-        const API = "https://api.themoviedb.org/3/";
-        const KEY = "8d6d91784c04f98f6e241852615c441b";
-
+        // ───────── TMDB metadata ─────────
         const metaRes = await fetch(
-            API + (mediaType === "tv" ? "tv/" : "movie/") + tmdbId +
+            TMDB + (mediaType === "tv" ? "tv/" : "movie/") +
+            tmdbId +
             "?api_key=" + KEY + "&language=en-US"
         );
 
@@ -15,69 +18,91 @@ async function getStreams(tmdbId, mediaType, season, episode) {
         const title = meta.title || meta.name;
         if (!title) return [];
 
+        // ───────── Search Movix ─────────
         const searchRes = await fetch(
-            "https://movix.blog/search?q=" + encodeURIComponent(title)
-        );
-
-        const searchHtml = await searchRes.text();
-
-        const match =
-            searchHtml.match(/href="\/movie\/([^"]+)"/i) ||
-            searchHtml.match(/href="\/watch\/([^"]+)"/i);
-
-        if (!match) return [];
-
-        const movieUrl = "https://movix.blog/movie/" + match[1];
-
-        const movieRes = await fetch(movieUrl, {
-            headers: {
-                "Referer": "https://movix.blog/",
-                "User-Agent": "Mozilla/5.0"
-            }
-        });
-
-        const movieHtml = await movieRes.text();
-
-        // extract iframe
-        const iframeMatch = movieHtml.match(/<iframe[^>]+src="([^"]+)"/i);
-        if (!iframeMatch) return [];
-
-        const iframeUrl = iframeMatch[1];
-
-        const iframeRes = await fetch(iframeUrl, {
-            headers: {
-                "Referer": movieUrl,
-                "User-Agent": "Mozilla/5.0"
-            }
-        });
-
-        const iframeHtml = await iframeRes.text();
-
-        // extract stream
-        const streamMatch =
-            iframeHtml.match(/(https?:\/\/[^"' ]+\.m3u8[^"' ]*)/) ||
-            iframeHtml.match(/(https?:\/\/[^"' ]+\.mp4[^"' ]*)/);
-
-        if (!streamMatch) return [];
-
-        const streamUrl = streamMatch[1];
-
-        return [
+            BASE + "/search?q=" + encodeURIComponent(title),
             {
-                name: "Movix",
-                title: "Movix HD",
-                url: streamUrl,
-                quality: "1080p",
-                source: "Movix",
                 headers: {
-                    Referer: iframeUrl,
                     "User-Agent": "Mozilla/5.0"
                 }
             }
-        ];
+        );
+
+        const html = await searchRes.text();
+
+        const linkMatch =
+            html.match(/href="\/movie\/([^"]+)"/i) ||
+            html.match(/href="\/watch\/([^"]+)"/i);
+
+        if (!linkMatch) return [];
+
+        const movieUrl = BASE + "/movie/" + linkMatch[1];
+
+        // ───────── Open movie page ─────────
+        const pageRes = await fetch(movieUrl, {
+            headers: {
+                "Referer": BASE,
+                "User-Agent": "Mozilla/5.0"
+            }
+        });
+
+        const pageHtml = await pageRes.text();
+
+        // ───────── Extract iframes ─────────
+        const iframeRegex = /<iframe[^>]+src="([^"]+)"/gi;
+
+        let iframe;
+        let streams = [];
+
+        while ((iframe = iframeRegex.exec(pageHtml)) !== null) {
+
+            const iframeUrl = iframe[1];
+
+            try {
+
+                const playerRes = await fetch(iframeUrl, {
+                    headers: {
+                        "Referer": movieUrl,
+                        "User-Agent": "Mozilla/5.0"
+                    }
+                });
+
+                const playerHtml = await playerRes.text();
+
+                // ───────── Extract streams ─────────
+                const streamRegex =
+                    /(https?:\/\/[^"' ]+\.m3u8[^"' ]*)|(https?:\/\/[^"' ]+\.mp4[^"' ]*)/gi;
+
+                let match;
+
+                while ((match = streamRegex.exec(playerHtml)) !== null) {
+
+                    const streamUrl = match[1] || match[2];
+
+                    streams.push({
+                        name: "Movix",
+                        title: "Movix Server",
+                        url: streamUrl,
+                        quality: "HD",
+                        source: "Movix",
+                        headers: {
+                            Referer: iframeUrl,
+                            "User-Agent": "Mozilla/5.0"
+                        }
+                    });
+
+                }
+
+            } catch (err) {}
+
+        }
+
+        return streams;
 
     } catch (err) {
+
         return [];
+
     }
 
 }
