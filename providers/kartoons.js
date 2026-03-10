@@ -7,23 +7,17 @@ function getStreams(tmdbId, mediaType, seasonNum, episodeNum, title) {
 
         let searchUrl = "https://kartoons.me/?s=" + encodeURIComponent(searchTitle);
 
-        // STEP 1: SEARCH
         fetch(searchUrl)
         .then(function(res){ return res.text(); })
         .then(function(html){
 
-            let postMatch = html.match(/class="post-title[^"]*">\s*<a href="([^"]+)"/i);
-
+            let postMatch = html.match(/class="post-title".*?href="([^"]+)"/i);
             if(!postMatch) {
                 resolve([]);
                 return;
             }
 
-            let postUrl = postMatch[1];
-
-            // STEP 2: OPEN SHOW PAGE
-            return fetch(postUrl);
-
+            return fetch(postMatch[1]);
         })
         .then(function(res){
             if(!res) return null;
@@ -36,21 +30,20 @@ function getStreams(tmdbId, mediaType, seasonNum, episodeNum, title) {
                 return;
             }
 
-            // STEP 3: FIND PLAYER IFRAME
-            let iframeMatch = html.match(/<iframe[^>]+src="([^"]+)"/i);
+            // Find token used for playlist
+            let tokenMatch = html.match(/playlist\/([A-Za-z0-9_\-]+)/);
 
-            if(!iframeMatch){
+            if(!tokenMatch){
                 resolve([]);
                 return;
             }
 
-            let iframeUrl = iframeMatch[1];
+            let m3u8 = "https://v5.m3u8mock.workers.dev/playlist/" + tokenMatch[1];
 
-            // STEP 4: RETURN STREAM
             streams.push({
                 name: "Kartoons",
-                description: "Cartoon Stream",
-                url: iframeUrl,
+                description: "M3U8 Stream",
+                url: m3u8,
                 behaviorHints: {
                     notWebReady: false
                 }
