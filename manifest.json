@@ -133,6 +133,19 @@
       "contentLanguage": ["en"]
     },
     {
+      "id": "hdrezka",
+      "name": "HDRezka",
+      "description": "Auto-generated description for HDRezka",
+      "version": "1.0.0",
+      "author": "Michat88",
+      "supportedTypes": ["movie", "tv"],
+      "filename": "providers/hdrezka.js",
+      "enabled": true,
+      "formats": ["mp4", "m3u8"],
+      "logo": "",
+      "contentLanguage": ["en"]
+    },
+    {
       "id": "movies4u",
       "name": "Movies4u",
       "description": "Auto-generated description for Movies4u",
