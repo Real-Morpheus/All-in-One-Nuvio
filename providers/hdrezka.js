@@ -1,437 +1,406 @@
-// HDRezka Scraper for Nuvio Local Scrapers
-// React Native compatible version - No async/await for sandbox compatibility
+// YFlix Scraper for Nuvio Local Scrapers
+// React Native compatible version - Uses enc-dec.app database for accurate matching
 
-// Import cheerio for HTML parsing (React Native compatible)
-const cheerio = require('cheerio-without-node-native');
-
-console.log('[HDRezka] Using cheerio-without-node-native for DOM parsing');
-
-// Constants
-const TMDB_API_KEY = "439c478a771f35c05022f9feabcca01c";
-const REZKA_BASE = 'https://hdrezka-home.tv/';
-const BASE_HEADERS = {
-    'X-Hdrezka-Android-App': '1',
-    'X-Hdrezka-Android-App-Version': '2.2.0',
-    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
-    'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
-    'Accept-Language': 'en-US,en;q=0.5',
-    'Connection': 'keep-alive'
+// Headers for requests
+const HEADERS = {
+  'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/137.0.0.0 Safari/537.36',
+  'Connection': 'keep-alive'
 };
 
-// Helper function to make HTTP requests
-function makeRequest(url, options = {}) {
-    return fetch(url, {
-        ...options,
-        headers: {
-            ...BASE_HEADERS,
-            ...options.headers
-        }
-    }).then(function (response) {
-        if (!response.ok) {
-            throw new Error(`HTTP ${response.status}: ${response.statusText}`);
-        }
-        return response;
+const API = 'https://enc-dec.app/api';
+const DB_API = 'https://enc-dec.app/db/flix';
+const YFLIX_AJAX = 'https://yflix.online';
+
+// Debug helpers
+function createRequestId() {
+  try {
+    const rand = Math.random().toString(36).slice(2, 8);
+    const ts = Date.now().toString(36).slice(-6);
+    return `${rand}${ts}`;
+  } catch (e) {
+    return String(Date.now());
+  }
+}
+
+function logRid(rid, msg, extra) {
+  try {
+    if (extra !== undefined) {
+      console.log(`[YFlix][rid:${rid}] ${msg}`, extra);
+    } else {
+      console.log(`[YFlix][rid:${rid}] ${msg}`);
+    }
+  } catch (e) {
+    // ignore logging errors
+  }
+}
+
+// Helper functions for HTTP requests (React Native compatible)
+function getText(url) {
+  return fetch(url, { headers: HEADERS })
+    .then(response => {
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+      }
+      return response.text();
     });
 }
 
-// Generate random favs parameter
-function generateRandomFavs() {
-    const randomHex = () => Math.floor(Math.random() * 16).toString(16);
-    const generateSegment = (length) => Array.from({ length }, randomHex).join('');
-
-    return `${generateSegment(8)}-${generateSegment(4)}-${generateSegment(4)}-${generateSegment(4)}-${generateSegment(12)}`;
-}
-
-// Extract title and year from search result
-function extractTitleAndYear(input) {
-    const regex = /^(.*?),.*?(\d{4})/;
-    const match = input.match(regex);
-
-    if (match) {
-        const title = match[1];
-        const year = match[2];
-        return { title: title.trim(), year: year ? parseInt(year, 10) : null };
-    }
-    return null;
-}
-
-// Parse video links from HDRezka response (optimized)
-function parseVideoLinks(inputString) {
-    if (!inputString) {
-        console.log('[HDRezka] No video links found');
-        return {};
-    }
-
-    console.log(`[HDRezka] Parsing video links from stream URL data`);
-    const linksArray = inputString.split(',');
-    const result = {};
-
-    // Pre-compile regex patterns for better performance
-    const simplePattern = /\[([^<\]]+)\](https?:\/\/[^\s,]+\.mp4|null)/;
-    const qualityPattern = /\[<span[^>]*>([^<]+)/;
-    const urlPattern = /\][^[]*?(https?:\/\/[^\s,]+\.mp4|null)/;
-
-    for (const link of linksArray) {
-        // Try simple format first (non-HTML)
-        let match = link.match(simplePattern);
-
-        // If not found, try HTML format with more flexible pattern
-        if (!match) {
-            const qualityMatch = link.match(qualityPattern);
-            const urlMatch = link.match(urlPattern);
-
-            if (qualityMatch && urlMatch) {
-                match = [null, qualityMatch[1].trim(), urlMatch[1]];
-            }
-        }
-
-        if (match) {
-            const qualityText = match[1].trim();
-            const mp4Url = match[2];
-
-            // Skip null URLs (premium content that requires login)
-            if (mp4Url !== 'null') {
-                result[qualityText] = { type: 'mp4', url: mp4Url };
-                console.log(`[HDRezka] Found ${qualityText}: ${mp4Url.substring(0, 50)}...`);
-            } else {
-                console.log(`[HDRezka] Premium quality ${qualityText} requires login (null URL)`);
-            }
-        } else {
-            console.log(`[HDRezka] Could not parse quality from: ${link.substring(0, 100)}...`);
-        }
-    }
-
-    console.log(`[HDRezka] Found ${Object.keys(result).length} valid qualities: ${Object.keys(result).join(', ')}`);
-    return result;
-}
-
-// Parse subtitles from HDRezka response (optimized)
-function parseSubtitles(inputString) {
-    if (!inputString) {
-        console.log('[HDRezka] No subtitles found');
-        return [];
-    }
-
-    console.log(`[HDRezka] Parsing subtitles data`);
-    const linksArray = inputString.split(',');
-    const captions = [];
-
-    // Pre-compile regex pattern for better performance
-    const subtitlePattern = /\[([^\]]+)\](https?:\/\/\S+?)(?=,\[|$)/;
-
-    for (const link of linksArray) {
-        const match = link.match(subtitlePattern);
-
-        if (match) {
-            const language = match[1];
-            const url = match[2];
-
-            captions.push({
-                id: url,
-                language,
-                hasCorsRestrictions: false,
-                type: 'vtt',
-                url: url,
-            });
-            console.log(`[HDRezka] Found subtitle ${language}: ${url.substring(0, 50)}...`);
-        }
-    }
-
-    console.log(`[HDRezka] Found ${captions.length} subtitles`);
-    return captions;
-}
-
-// Search for content and find media ID
-function searchAndFindMediaId(media) {
-    console.log(`[HDRezka] Searching for title: ${media.title}, type: ${media.type}, year: ${media.releaseYear || 'any'}`);
-
-    const itemRegexPattern = /<a href="([^"]+)"><span class="enty">([^<]+)<\/span> \(([^)]+)\)/g;
-    const idRegexPattern = /\/(\d+)-[^/]+\.html$/;
-
-    const fullUrl = new URL('/engine/ajax/search.php', REZKA_BASE);
-    fullUrl.searchParams.append('q', media.title);
-
-    console.log(`[HDRezka] Making search request to: ${fullUrl.toString()}`);
-    return makeRequest(fullUrl.toString()).then(function (response) {
-        return response.text();
-    }).then(function (searchData) {
-        console.log(`[HDRezka] Search response length: ${searchData.length}`);
-
-        const movieData = [];
-        let match;
-
-        while ((match = itemRegexPattern.exec(searchData)) !== null) {
-            const url = match[1];
-            const titleAndYear = match[3];
-
-            const result = extractTitleAndYear(titleAndYear);
-            if (result !== null) {
-                const id = url.match(idRegexPattern)?.[1] || null;
-                const isMovie = url.includes('/films/');
-                const isShow = url.includes('/series/');
-                const type = isMovie ? 'movie' : isShow ? 'tv' : 'unknown';
-
-                movieData.push({
-                    id: id ?? '',
-                    year: result.year ?? 0,
-                    type,
-                    url,
-                    title: match[2]
-                });
-                console.log(`[HDRezka] Found: id=${id}, title=${match[2]}, type=${type}, year=${result.year}`);
-            }
-        }
-
-        // Filter by year if provided
-        let filteredItems = movieData;
-        if (media.releaseYear) {
-            filteredItems = movieData.filter(item => item.year === media.releaseYear);
-            console.log(`[HDRezka] Items filtered by year ${media.releaseYear}: ${filteredItems.length}`);
-        }
-
-        // Filter by type if provided
-        if (media.type) {
-            filteredItems = filteredItems.filter(item => item.type === media.type);
-            console.log(`[HDRezka] Items filtered by type ${media.type}: ${filteredItems.length}`);
-        }
-
-        if (filteredItems.length === 0 && movieData.length > 0) {
-            console.log(`[HDRezka] No exact match found, using first result: ${movieData[0].title}`);
-            return movieData[0];
-        }
-
-        if (filteredItems.length > 0) {
-            console.log(`[HDRezka] Selected item: id=${filteredItems[0].id}, title=${filteredItems[0].title}`);
-            return filteredItems[0];
-        } else {
-            console.log(`[HDRezka] No matching items found`);
-            return null;
-        }
+function getJson(url) {
+  return fetch(url, { headers: HEADERS })
+    .then(response => {
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+      }
+      return response.json();
     });
 }
 
-// Get translator ID from media page
-function getTranslatorId(url, id, media) {
-    console.log(`[HDRezka] Getting translator ID for url=${url}, id=${id}`);
+function postJson(url, jsonBody, extraHeaders) {
+  const body = JSON.stringify(jsonBody);
+  const headers = Object.assign(
+    {},
+    HEADERS,
+    { 'Content-Type': 'application/json', 'Content-Length': body.length.toString() },
+    extraHeaders || {}
+  );
 
-    // Make sure the URL is absolute
-    const fullUrl = url.startsWith('http') ? url : `${REZKA_BASE}${url.startsWith('/') ? url.substring(1) : url}`;
-    console.log(`[HDRezka] Making request to: ${fullUrl}`);
+  return fetch(url, {
+    method: 'POST',
+    headers,
+    body
+  }).then(response => {
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+    }
+    return response.json();
+  });
+}
 
-    return makeRequest(fullUrl).then(function (response) {
-        return response.text();
-    }).then(function (responseText) {
-        console.log(`[HDRezka] Translator page response length: ${responseText.length}`);
+// Enc/Dec helpers
+function encrypt(text) {
+  return getJson(`${API}/enc-movies-flix?text=${encodeURIComponent(text)}`).then(j => j.result);
+}
 
-        // Translator ID 238 represents the Original + subtitles player.
-        if (responseText.includes(`data-translator_id="238"`)) {
-            console.log(`[HDRezka] Found translator ID 238 (Original + subtitles)`);
-            return '238';
-        }
+function decrypt(text) {
+  return postJson(`${API}/dec-movies-flix`, { text: text }).then(j => j.result);
+}
 
-        const functionName = media.type === 'movie' ? 'initCDNMoviesEvents' : 'initCDNSeriesEvents';
-        const regexPattern = new RegExp(`sof\.tv\.${functionName}\\(${id}, ([^,]+)`, 'i');
-        const match = responseText.match(regexPattern);
-        const translatorId = match ? match[1] : null;
+function parseHtml(html) {
+  return postJson(`${API}/parse-html`, { text: html }).then(j => j.result);
+}
 
-        console.log(`[HDRezka] Extracted translator ID: ${translatorId}`);
-        return translatorId;
+function decryptRapidMedia(embedUrl) {
+  const media = embedUrl.replace('/e/', '/media/').replace('/e2/', '/media/');
+  return getJson(media)
+    .then((mediaJson) => {
+      const encrypted = mediaJson && mediaJson.result;
+      if (!encrypted) throw new Error('No encrypted media result from RapidShare media endpoint');
+      return postJson(`${API}/dec-rapid`, { text: encrypted, agent: HEADERS['User-Agent'] });
+    })
+    .then(j => j.result);
+}
+
+// Database lookup - replaces title matching
+function findInDatabase(tmdbId, mediaType) {
+  const type = mediaType === 'movie' ? 'movie' : 'tv';
+  const url = `${DB_API}/find?tmdb_id=${tmdbId}&type=${type}`;
+
+  return getJson(url)
+    .then(results => {
+      if (!results || results.length === 0) {
+        return null;
+      }
+      return results[0]; // Return first match
     });
 }
 
-// Get stream data from HDRezka
-function getStreamData(id, translatorId, media) {
-    console.log(`[HDRezka] Getting stream for id=${id}, translatorId=${translatorId}`);
+// HLS helpers (Promise-based)
+function parseQualityFromM3u8(m3u8Text, baseUrl = '') {
+  const streams = [];
+  const lines = m3u8Text.split(/\r?\n/);
+  let currentInfo = null;
 
-    const searchParams = new URLSearchParams();
-    searchParams.append('id', id);
-    searchParams.append('translator_id', translatorId);
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i].trim();
+    if (line.startsWith('#EXT-X-STREAM-INF')) {
+      const bwMatch = line.match(/BANDWIDTH=\s*(\d+)/i);
+      const resMatch = line.match(/RESOLUTION=\s*(\d+)x(\d+)/i);
 
-    if (media.type === 'tv') {
-        searchParams.append('season', media.season.number.toString());
-        searchParams.append('episode', media.episode.number.toString());
-        console.log(`[HDRezka] TV params: season=${media.season.number}, episode=${media.episode.number}`);
-    }
+      currentInfo = {
+        bandwidth: bwMatch ? parseInt(bwMatch[1]) : null,
+        width: resMatch ? parseInt(resMatch[1]) : null,
+        height: resMatch ? parseInt(resMatch[2]) : null,
+        quality: null
+      };
 
-    const randomFavs = generateRandomFavs();
-    searchParams.append('favs', randomFavs);
-    searchParams.append('action', media.type === 'tv' ? 'get_stream' : 'get_movie');
-
-    const fullUrl = `${REZKA_BASE}ajax/get_cdn_series/`;
-    console.log(`[HDRezka] Making stream request with action=${media.type === 'tv' ? 'get_stream' : 'get_movie'}`);
-
-    return makeRequest(fullUrl, {
-        method: 'POST',
-        body: searchParams,
-        headers: {
-            'Content-Type': 'application/x-www-form-urlencoded'
-        }
-    }).then(function (response) {
-        return response.text();
-    }).then(function (rawText) {
-        console.log(`[HDRezka] Stream response length: ${rawText.length}`);
-
+      if (currentInfo.height) {
+        currentInfo.quality = `${currentInfo.height}p`;
+      } else if (currentInfo.bandwidth) {
+        const bps = currentInfo.bandwidth;
+        if (bps >= 6_000_000) currentInfo.quality = '2160p';
+        else if (bps >= 4_000_000) currentInfo.quality = '1440p';
+        else if (bps >= 2_500_000) currentInfo.quality = '1080p';
+        else if (bps >= 1_500_000) currentInfo.quality = '720p';
+        else if (bps >= 800_000) currentInfo.quality = '480p';
+        else if (bps >= 400_000) currentInfo.quality = '360p';
+        else currentInfo.quality = '240p';
+      }
+    } else if (line && !line.startsWith('#') && currentInfo) {
+      let streamUrl = line;
+      if (!streamUrl.startsWith('http') && baseUrl) {
         try {
-            const parsedResponse = JSON.parse(rawText);
-            console.log(`[HDRezka] Parsed response successfully`);
-
-            // Process video qualities and subtitles synchronously
-            const qualities = parseVideoLinks(parsedResponse.url);
-            const captions = parseSubtitles(parsedResponse.subtitle);
-
-            return { qualities, captions };
+          const url = new URL(streamUrl, baseUrl);
+          streamUrl = url.href;
         } catch (e) {
-            console.error(`[HDRezka] Failed to parse JSON response: ${e.message}`);
-            console.log(`[HDRezka] Raw response: ${rawText.substring(0, 200)}...`);
-            return null;
+          // Ignore URL parsing errors
         }
-    });
+      }
+
+      streams.push({
+        url: streamUrl,
+        quality: currentInfo.quality || 'unknown',
+        bandwidth: currentInfo.bandwidth,
+        width: currentInfo.width,
+        height: currentInfo.height,
+        type: 'hls'
+      });
+
+      currentInfo = null;
+    }
+  }
+
+  return {
+    isMaster: m3u8Text.includes('#EXT-X-STREAM-INF'),
+    streams: streams.sort((a, b) => (b.height || 0) - (a.height || 0))
+  };
 }
 
-// Get file size using HEAD request
-function getFileSize(url) {
-    console.log(`[HDRezka] Getting file size for: ${url.substring(0, 60)}...`);
+function enhanceStreamsWithQuality(streams) {
+  const enhancedStreams = [];
 
-    return fetch(url, {
-        method: 'HEAD',
-        headers: {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
-        }
-    }).then(function (response) {
-        if (response.ok) {
-            const contentLength = response.headers.get('content-length');
-            if (contentLength) {
-                const bytes = parseInt(contentLength, 10);
-                const sizeFormatted = formatFileSize(bytes);
-                console.log(`[HDRezka] File size: ${sizeFormatted}`);
-                return sizeFormatted;
-            }
-        }
-
-        console.log(`[HDRezka] Could not determine file size`);
-        return null;
-    }).catch(function (error) {
-        console.log(`[HDRezka] Error getting file size: ${error.message}`);
-        return null;
-    });
-}
-
-// Format file size in human readable format
-function formatFileSize(bytes) {
-    if (bytes === 0) return '0 Bytes';
-
-    const k = 1024;
-    const sizes = ['Bytes', 'KB', 'MB', 'GB', 'TB'];
-    const i = Math.floor(Math.log(bytes) / Math.log(k));
-
-    return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
-}
-
-// Parse quality for sorting
-function parseQualityForSort(qualityString) {
-    if (!qualityString) return 0;
-    const match = qualityString.match(/(\d{3,4})p/i);
-    return match ? parseInt(match[1], 10) : 0;
-}
-
-// Main function to get streams for TMDB content
-function getStreams(tmdbId, mediaType = 'movie', seasonNum = null, episodeNum = null) {
-    console.log(`[HDRezka] Fetching streams for TMDB ID: ${tmdbId}, Type: ${mediaType}${seasonNum ? `, S${seasonNum}E${episodeNum}` : ''}`);
-
-    // Get TMDB info
-    const tmdbUrl = `https://api.themoviedb.org/3/${mediaType === 'tv' ? 'tv' : 'movie'}/${tmdbId}?api_key=${TMDB_API_KEY}`;
-    return makeRequest(tmdbUrl).then(function (tmdbResponse) {
-        return tmdbResponse.json();
-    }).then(function (tmdbData) {
-        const title = mediaType === 'tv' ? tmdbData.name : tmdbData.title;
-        const year = mediaType === 'tv' ? tmdbData.first_air_date?.substring(0, 4) : tmdbData.release_date?.substring(0, 4);
-
-        if (!title) {
-            throw new Error('Could not extract title from TMDB response');
-        }
-
-        console.log(`[HDRezka] TMDB Info: "${title}" (${year})`);
-
-        // Create media object
-        const media = {
-            type: mediaType === 'tv' ? 'tv' : 'movie',
-            title: title,
-            releaseYear: year ? parseInt(year) : null
-        };
-
-        // Add season/episode for TV shows
-        if (mediaType === 'tv') {
-            media.season = { number: seasonNum || 1 };
-            media.episode = { number: episodeNum || 1 };
-        }
-
-        // Step 1: Search and find media ID
-        return searchAndFindMediaId(media).then(function (searchResult) {
-            if (!searchResult || !searchResult.id) {
-                console.log('[HDRezka] No search result found');
-                return [];
-            }
-
-            // Step 2: Get translator ID
-            return getTranslatorId(searchResult.url, searchResult.id, media).then(function (translatorId) {
-                if (!translatorId) {
-                    console.log('[HDRezka] No translator ID found');
-                    return [];
-                }
-
-                // Step 3: Get stream data
-                return getStreamData(searchResult.id, translatorId, media).then(function (streamData) {
-                    if (!streamData || !streamData.qualities) {
-                        console.log('[HDRezka] No stream data found');
-                        return [];
-                    }
-
-                    // Convert to Nuvio stream format with size detection
-                    const streamEntries = Object.entries(streamData.qualities);
-                    const streamPromises = streamEntries
-                        .filter(([quality, data]) => data.url && data.url !== 'null')
-                        .map(([quality, data]) => {
-                            const cleanQuality = quality.replace(/p.*$/, 'p'); // "1080p Ultra" -> "1080p"
-
-                            // Get file size using Promise chain
-                            return getFileSize(data.url).then(function (fileSize) {
-                                return {
-                                    name: "HDRezka",
-                                    title: `${title} ${year ? `(${year})` : ''} ${quality}${mediaType === 'tv' ? ` S${seasonNum}E${episodeNum}` : ''}`,
-                                    url: data.url,
-                                    quality: cleanQuality,
-                                    size: fileSize,
-                                    type: 'direct'
-                                };
-                            });
-                        });
-
-                    return Promise.all(streamPromises).then(function (streams) {
-                        // Sort by quality (highest first) - optimized
-                        if (streams.length > 1) {
-                            streams.sort(function (a, b) {
-                                const qualityA = parseQualityForSort(a.quality);
-                                const qualityB = parseQualityForSort(b.quality);
-                                return qualityB - qualityA;
-                            });
-                        }
-
-                        console.log(`[HDRezka] Successfully processed ${streams.length} streams`);
-                        return streams;
-                    });
-                });
+  const tasks = streams.map(s => {
+    if (s && s.url && typeof s.url === 'string' && s.url.includes('.m3u8')) {
+      return getText(s.url)
+        .then(text => {
+          const info = parseQualityFromM3u8(text, s.url);
+          if (info.isMaster && info.streams.length > 0) {
+            info.streams.forEach(qualityStream => {
+              enhancedStreams.push({
+                ...s,
+                ...qualityStream,
+                masterUrl: s.url
+              });
             });
+          } else {
+            enhancedStreams.push({
+              ...s,
+              quality: s.quality || 'unknown'
+            });
+          }
+        })
+        .catch(() => {
+          enhancedStreams.push({
+            ...s,
+            quality: s.quality || 'Adaptive'
+          });
         });
-    }).catch(function (error) {
-        console.error(`[HDRezka] Error in getStreams: ${error.message}`);
-        return [];
+    } else {
+      enhancedStreams.push(s);
+    }
+    return Promise.resolve();
+  });
+
+  return Promise.all(tasks).then(() => enhancedStreams);
+}
+
+function formatStreamsData(rapidResult) {
+  const streams = [];
+  const subtitles = [];
+  const thumbnails = [];
+  if (rapidResult && typeof rapidResult === 'object') {
+    (rapidResult.sources || []).forEach(src => {
+      const fileUrl = src && src.file;
+      if (fileUrl) {
+        streams.push({
+          url: fileUrl,
+          quality: fileUrl.includes('.m3u8') ? 'Adaptive' : 'unknown',
+          type: fileUrl.includes('.m3u8') ? 'hls' : 'file',
+          provider: 'rapidshare',
+        });
+      }
+    });
+    (rapidResult.tracks || []).forEach(tr => {
+      if (tr && tr.kind === 'thumbnails' && tr.file) {
+        thumbnails.push({ url: tr.file, type: 'vtt' });
+      } else if (tr && (tr.kind === 'captions' || tr.kind === 'subtitles') && tr.file) {
+        subtitles.push({ url: tr.file, language: tr.label || '', default: !!tr.default });
+      }
+    });
+  }
+  return { streams, subtitles, thumbnails, totalStreams: streams.length };
+}
+
+function runStreamFetch(eid, title, year, mediaType, seasonNum, episodeNum, rid) {
+  logRid(rid, `runStreamFetch: start eid=${eid}`);
+
+  return encrypt(eid)
+    .then(encEid => {
+      logRid(rid, 'links/list: enc(eid) ready');
+      return getJson(`${YFLIX_AJAX}/links/list?eid=${eid}&_=${encEid}`);
+    })
+    .then(serversResp => parseHtml(serversResp.result))
+    .then(servers => {
+      const serverTypes = Object.keys(servers || {});
+      const byTypeCounts = serverTypes.map(stype => ({ type: stype, count: Object.keys(servers[stype] || {}).length }));
+      logRid(rid, 'servers available', byTypeCounts);
+
+      const allStreams = [];
+      const allSubtitles = [];
+      const allThumbnails = [];
+
+      const serverPromises = [];
+      const lids = [];
+      Object.keys(servers).forEach(serverType => {
+        Object.keys(servers[serverType]).forEach(serverKey => {
+          const lid = servers[serverType][serverKey].lid;
+          lids.push(lid);
+          const p = encrypt(lid)
+            .then(encLid => {
+              logRid(rid, `links/view: enc(lid) ready`, { serverType, serverKey, lid });
+              return getJson(`${YFLIX_AJAX}/links/view?id=${lid}&_=${encLid}`);
+            })
+            .then(embedResp => {
+              logRid(rid, `decrypt(embed)`, { serverType, serverKey, lid });
+              return decrypt(embedResp.result);
+            })
+            .then(decrypted => {
+              if (decrypted && typeof decrypted === 'object' && decrypted.url && decrypted.url.includes('rapidshare.cc')) {
+                logRid(rid, `rapid.media → dec-rapid`, { lid });
+                return decryptRapidMedia(decrypted.url)
+                  .then(rapidData => formatStreamsData(rapidData))
+                  .then(formatted => enhanceStreamsWithQuality(formatted.streams)
+                    .then(enhanced => {
+                      enhanced.forEach(s => {
+                        s.serverType = serverType;
+                        s.serverKey = serverKey;
+                        s.serverLid = lid;
+                        allStreams.push(s);
+                      });
+                      allSubtitles.push(...formatted.subtitles);
+                      allThumbnails.push(...formatted.thumbnails);
+                    })
+                  );
+              }
+              return null;
+            })
+            .catch(() => null);
+          serverPromises.push(p);
+        });
+      });
+      const uniqueLids = Array.from(new Set(lids));
+      logRid(rid, `fan-out: lids`, { total: lids.length, unique: uniqueLids.length });
+
+      return Promise.all(serverPromises).then(() => {
+        // Deduplicate streams by URL
+        const seen = new Set();
+        let dedupedStreams = allStreams.filter(s => {
+          if (!s || !s.url) return false;
+          if (seen.has(s.url)) return false;
+          seen.add(s.url);
+          return true;
+        });
+        logRid(rid, `streams: deduped`, { count: dedupedStreams.length });
+
+        // Convert to Nuvio format
+        const nuvioStreams = dedupedStreams.map(stream => ({
+          name: `YFlix ${stream.serverType || 'Server'} - ${stream.quality || 'Unknown'}`,
+          title: `${title}${year ? ` (${year})` : ''}${mediaType === 'tv' && seasonNum && episodeNum ? ` S${seasonNum}E${episodeNum}` : ''}`,
+          url: stream.url,
+          quality: stream.quality || 'Unknown',
+          size: 'Unknown',
+          headers: HEADERS,
+          provider: 'yflix'
+        }));
+
+        return nuvioStreams;
+      });
     });
 }
 
-// Export the main function
+// Main getStreams function
+function getStreams(tmdbId, mediaType, seasonNum, episodeNum) {
+  return new Promise((resolve, reject) => {
+    const rid = createRequestId();
+    logRid(rid, `getStreams start tmdbId=${tmdbId} type=${mediaType} S=${seasonNum || ''} E=${episodeNum || ''}`);
+
+    // Look up content in database by TMDB ID
+    findInDatabase(tmdbId, mediaType)
+      .then(dbResult => {
+        if (!dbResult) {
+          logRid(rid, 'no match found in database');
+          resolve([]);
+          return;
+        }
+
+        const info = dbResult.info;
+        const episodes = dbResult.episodes;
+
+        logRid(rid, `database match found`, {
+          title: info.title_en,
+          year: info.year,
+          flixId: info.flix_id,
+          episodeCount: info.episode_count
+        });
+
+        // Get the episode ID
+        let eid = null;
+        const selectedSeason = String(seasonNum || 1);
+        const selectedEpisode = String(episodeNum || 1);
+
+        if (episodes && episodes[selectedSeason] && episodes[selectedSeason][selectedEpisode]) {
+          eid = episodes[selectedSeason][selectedEpisode].eid;
+          logRid(rid, `found episode eid=${eid} for S${selectedSeason}E${selectedEpisode}`);
+        } else {
+          // Fallback: try to find any available episode
+          const seasons = Object.keys(episodes || {});
+          if (seasons.length > 0) {
+            const firstSeason = seasons[0];
+            const episodesInSeason = Object.keys(episodes[firstSeason] || {});
+            if (episodesInSeason.length > 0) {
+              const firstEp = episodesInSeason[0];
+              eid = episodes[firstSeason][firstEp].eid;
+              logRid(rid, `fallback: using S${firstSeason}E${firstEp}, eid=${eid}`);
+            }
+          }
+        }
+
+        if (!eid) {
+          logRid(rid, 'no episode ID found');
+          resolve([]);
+          return;
+        }
+
+        // Fetch streams using the episode ID
+        return runStreamFetch(eid, info.title_en, info.year, mediaType, seasonNum, episodeNum, rid);
+      })
+      .then(streams => {
+        if (streams) {
+          logRid(rid, `returning streams`, { count: streams.length });
+          resolve(streams);
+        } else {
+          resolve([]);
+        }
+      })
+      .catch(error => {
+        logRid(rid, `ERROR ${error && error.message ? error.message : String(error)}`);
+        resolve([]); // Return empty array on error, don't reject
+      });
+  });
+}
+
+// Export for React Native compatibility
 if (typeof module !== 'undefined' && module.exports) {
-    module.exports = { getStreams };
+  module.exports = { getStreams };
 } else {
-    // For React Native environment
-    global.getStreams = getStreams;
+  global.getStreams = getStreams;
 }
