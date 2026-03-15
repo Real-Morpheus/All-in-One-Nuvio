@@ -16,8 +16,11 @@ A collection of high-quality local scrapers for the Nuvio streaming application.
 
 | Provider | Content | Quality | NuvioApp | NuvioTV |
 |---|---|---|---|---|
-| 📽️ AnimeKai | Anime | 1080p / 720p | ✅ | ✅ |
-| 🎥 KissKH | Asian Movies / Drama | 1080p / 720p | ✅ | ✅ |
+| [![4khdhub.png](https://i.postimg.cc/Z5B7RF79/4khdhub.png)](https://postimg.cc/21YF9vfm) 4KHDHub | Film & Serial | 4K / 1080p / 720p | ✅ | ✅ |
+| [![animekai.png](https://i.postimg.cc/cLCqcnFV/animekai.png)](https://postimg.cc/9r6Nmr5p) AnimeKai | Anime | 1080p / 720p | ✅ | ✅ |
+| [![download-(2).png](https://i.postimg.cc/cJ6s6jq8/download-(2).png)](https://postimg.cc/CZTyQcxF) HDHub4U| Film & Serial | 4K / 1080p / 720p | ✅ | ✅ |
+| [![kisskh.png](https://i.postimg.cc/Qdwzkn9d/kisskh.png)](https://postimg.cc/K17QmfD6) KissKH | Asian Movies / Drama | 1080p / 720p | ✅ | ✅ |
+| 🎞️ UHDMovies | Film & Serial | 4K / 1080p / 720p | ✅ | ✅ |
 | 🎥 VidSrc | Film & Serial | 1080p / 720p | ✅ | ✅ |
 | 🎬 VidLink | Film & Serial | 1080p / 720p | ✅ | ✅ |
 
