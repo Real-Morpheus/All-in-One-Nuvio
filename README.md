@@ -14,6 +14,12 @@ A collection of high-quality local scrapers for the Nuvio streaming application.
 
 ## Available Scrapers
 
+| Provider | Content | Quality | NuvioApp | NuvioTV |
+|---|---|---|---|---|
+| 🎥 VidSrc | Film & Serial | 1080p / 720p | ✅ | ✅ |
+| 🎬 VidLink | Film & Serial | 1080p / 720p | ✅ | ✅ |
+
+
 ### 4KHDHub
 - **Status**: ✅ Active and Tested
 - **Description**: Premium 4K/UHD streaming with multiple quality options
