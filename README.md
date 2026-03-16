@@ -20,7 +20,7 @@ A collection of high-quality local scrapers for the Nuvio streaming application.
 | [![animekai.png](https://i.postimg.cc/cLCqcnFV/animekai.png)](https://postimg.cc/9r6Nmr5p) AnimeKai | 🏴󠁧󠁢󠁥󠁮󠁧󠁿 🇯🇵 | Anime | 1080p / 720p | ✅ | ✅ |
 [![dooflix.png](https://i.postimg.cc/B6Q28JSt/dooflix.png)](https://postimg.cc/Y4ZvZKmw)  DooFlix | 🏴󠁧󠁢󠁥󠁮󠁧󠁿 🇮🇳 | Film & Serial | 1080p / 720p | ✅ | ❌ |
 | [![download-(2).png](https://i.postimg.cc/cJ6s6jq8/download-(2).png)](https://postimg.cc/CZTyQcxF) HDHub4U | 🏴󠁧󠁢󠁥󠁮󠁧󠁿 🇮🇳 | Film & Serial | 4K / 1080p / 720p | ✅ | ✅ |
-| [![kisskh.png](https://i.postimg.cc/Qdwzkn9d/kisskh.png)](https://postimg.cc/K17QmfD6) KissKH | 🇰🇷 🇨🇳 🇯🇵Asian Movies / Drama | 1080p / 720p | ✅ | ✅ |
+| [![kisskh.png](https://i.postimg.cc/Qdwzkn9d/kisskh.png)](https://postimg.cc/K17QmfD6) KissKH | 🇰🇷 🇨🇳 🇯🇵 | Asian Movies / Drama | 1080p / 720p | ✅ | ✅ |
 | [![uhdmovies.png](https://i.postimg.cc/VkCg1svN/uhdmovies.png)](https://postimg.cc/3k3mFTgM) UHDMovies | Film & Serial | 4K / 1080p / 720p | ✅ | ❌ |
 | 🎥 VidSrc | Film & Serial | 1080p / 720p | ✅ | ✅ |
 | 🎬 VidLink | Film & Serial | 1080p / 720p | ✅ | ✅ |
