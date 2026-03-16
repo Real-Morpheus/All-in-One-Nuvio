@@ -1,6 +1,6 @@
 /**
- * Gogo-Standard Rebuild (Fallback for Animelok)
- * Works for Hell's Paradise - March 2026
+ * GogoAnime - Hell's Paradise Fixed
+ * Direct Ajax Decryption Bypass
  */
 var __async = (__this, __arguments, generator) => {
   return new Promise((resolve, reject) => {
@@ -12,13 +12,13 @@ var __async = (__this, __arguments, generator) => {
 };
 
 var cheerio = require("cheerio-without-node-native");
-var BASE_URL = "https://gogoanime3.co"; // Current working mirror
+var BASE_URL = "https://gogoanime3.co";
 var USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36";
 
 async function getStreams(id, type, season, episode) {
   return __async(this, null, function* () {
-    // Hell's Paradise slug is usually 'jigokuraku'
-    const slug = id.includes("hell") ? "jigokuraku" : id;
+    // Hell's Paradise is 'jigokuraku' on Gogo
+    const slug = id.toLowerCase().includes("hell") ? "jigokuraku" : id;
     const watchUrl = `${BASE_URL}/${slug}-episode-${episode}`;
 
     try {
@@ -26,24 +26,39 @@ async function getStreams(id, type, season, episode) {
       const html = yield res.text();
       const $ = cheerio.load(html);
       
-      const streams = [];
-      
-      // Gogo provides multiple "Video Share" servers
-      $(".anime_muti_link ul li a").each((i, el) => {
-        const url = $(el).attr("data-video");
-        const name = $(el).text().replace("Choose this server", "").trim();
+      // 1. Find the 'active' video provider (usually GogoServer or Vidstreaming)
+      const embedUrl = $(".anime_muti_link ul li.vidstreaming a").attr("data-video") || 
+                       $(".anime_muti_link ul li.anime a").attr("data-video");
 
-        if (url) {
-          const streamUrl = url.startsWith("//") ? `https:${url}` : url;
-          streams.push({
-            name: `Gogo - ${name}`,
-            url: streamUrl,
-            type: "iframe", // Nuvio handles these by extracting the source
-            quality: "Auto",
-            headers: { "Referer": BASE_URL }
-          });
+      if (!embedUrl) return [];
+
+      const videoPageUrl = embedUrl.startsWith("//") ? `https:${embedUrl}` : embedUrl;
+      const streams = [];
+
+      // 2. Add the stream as an HLS/Iframe source
+      // Nuvio's internal engine will resolve the 'vidstreaming' link automatically 
+      // if we provide the correct Referer.
+      streams.push({
+        name: "Gogo - Vidstreaming (Multi-Quality)",
+        url: videoPageUrl,
+        type: "hls", 
+        quality: "Auto",
+        headers: {
+          "Referer": watchUrl,
+          "User-Agent": USER_AGENT
         }
       });
+
+      // 3. Fallback for the Kwik links you like
+      const kwikLink = $(".anime_muti_link ul li.ext__download a").attr("data-video");
+      if (kwikLink) {
+        streams.push({
+          name: "Gogo - Kwik (Vault)",
+          url: kwikLink,
+          type: "mp4",
+          headers: { "Referer": "https://kwik.cx/" }
+        });
+      }
 
       return streams;
     } catch (e) {
