@@ -1,64 +1,68 @@
-const puppeteer = require('puppeteer');
+const BASE_URL = "https://animepahe.si";
 
-async function getStream(animeUrl) {
-    console.log(`[Nuvio] Launching browser for: ${animeUrl}`);
-    
-    const browser = await puppeteer.launch({ 
-        headless: "new",
-        args: ['--no-sandbox', '--disable-setuid-sandbox'] 
-    });
-
-    const page = await browser.newPage();
-
-    // 1. Set a realistic User-Agent
-    await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/118.0.0.0 Safari/537.36');
-
-    let streamUrl = null;
-
-    // 2. Intercept Network Requests to find the .m3u8
-    await page.setRequestInterception(true);
-    page.on('request', request => {
-        const url = request.url();
-        if (url.includes('.m3u8') || url.includes('uwu.m3u8')) {
-            streamUrl = url;
-            console.log('[Nuvio] Found Stream Link:', streamUrl);
-        }
-        request.continue();
-    });
-
+async function fetchStream(title, episode) {
     try {
-        // 3. Navigate to the page
-        await page.goto(animeUrl, { waitUntil: 'networkidle2', timeout: 60000 });
+        // 1. Search anime
+        let searchRes = await fetch(`${BASE_URL}/api?m=search&q=${encodeURIComponent(title)}`);
+        let searchJson = await searchRes.json();
 
-        // 4. If the page has a "Play" button or a redirect, we might need to click it
-        // Note: AnimePahe often has a "redirect" page. 
-        // We wait a few seconds for the player to initialize.
-        await new Promise(r => setTimeout(r, 5000));
+        if (!searchJson.data || searchJson.data.length === 0) return null;
 
-        if (!streamUrl) {
-            console.log("[Nuvio] Stream not found automatically. Trying to click play...");
-            // Force a click on the video container if needed
-            await page.click('#player_over'); 
-            await new Promise(r => setTimeout(r, 3000));
-        }
+        let animeId = searchJson.data[0].id;
 
-    } catch (err) {
-        console.error('[Nuvio] Error navigating:', err.message);
-    } finally {
-        await browser.close();
+        // 2. Get episode list
+        let epRes = await fetch(`${BASE_URL}/api?m=release&id=${animeId}&sort=episode_asc`);
+        let epJson = await epRes.json();
+
+        let epData = epJson.data.find(e => e.episode == episode);
+        if (!epData) return null;
+
+        // 3. Get session page (contains kwik links)
+        let sessionRes = await fetch(`${BASE_URL}/play/${epData.session}`);
+        let sessionHtml = await sessionRes.text();
+
+        // 4. Extract kwik link
+        let kwikMatch = sessionHtml.match(/https:\/\/kwik\.[^"]+/);
+        if (!kwikMatch) return null;
+
+        let kwikUrl = kwikMatch[0];
+
+        // 5. Open kwik page
+        let kwikRes = await fetch(kwikUrl);
+        let kwikHtml = await kwikRes.text();
+
+        // 6. Extract m3u8
+        let m3u8Match = kwikHtml.match(/https?:\/\/[^"]+\.m3u8[^"]*/);
+        if (!m3u8Match) return null;
+
+        return {
+            stream: m3u8Match[0],
+            referer: kwikUrl
+        };
+
+    } catch (e) {
+        return null;
     }
-
-    return streamUrl;
 }
 
-// --- Usage ---
-// Use an actual AnimePahe episode page here, not the CDN link.
-const episodePage = 'https://animepahe.si/play/your-episode-slug-here';
+function getStreams(tmdbId, mediaType, season, episode, title) {
+    return new Promise(async (resolve) => {
 
-getStream(episodePage).then(url => {
-    if(url) {
-        console.log('SUCCESS: You can now pass this to FFmpeg:', url);
-    } else {
-        console.log('FAILED: Could not intercept the stream.');
-    }
-});
+        let result = await fetchStream(title, episode);
+
+        if (!result) {
+            resolve([]);
+            return;
+        }
+
+        resolve([{
+            name: "AnimePahe",
+            url: result.stream,
+            type: "hls",
+            headers: {
+                "Referer": result.referer,
+                "User-Agent": "Mozilla/5.0"
+            }
+        }]);
+    });
+}
