@@ -225,6 +225,19 @@
       "contentLanguage": ["en"]
     },
     {
+      "id": "showbox",
+      "name": "ShowBox",
+      "description": "ShowBox streaming with multiple quality options and versions",
+      "version": "1.0.0",
+      "author": "Nuvio Team",
+      "supportedTypes": ["movie", "tv"],
+      "filename": "providers/showbox.js",
+      "enabled": true,
+      "formats": ["mp4", "mkv", "m3u8"],
+      "logo": "",
+      "contentLanguage": ["en"] 
+    },
+    {
       "id": "streamflix",
       "name": "Streamflix",
       "description": "Direct links via StreamFlix API",
