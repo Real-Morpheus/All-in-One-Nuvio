@@ -1,5 +1,5 @@
-// providers/multisource.js
-// Multi-Source Provider (Warez + SuperFlix fallback)
+// providers/ultimate.js
+// MAXED OUT Provider (Parallel + Multi-Source + Quality Sorting)
 
 const UA = 'Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/127.0.0.0 Mobile Safari/537.36';
 
@@ -16,12 +16,12 @@ async function extractHlsVariants(url) {
         for (let i = 0; i < lines.length; i++) {
             if (lines[i].includes('RESOLUTION=')) {
                 const match = lines[i].match(/RESOLUTION=\d+x(\d+)/);
-                const nextLine = lines[i + 1];
+                const next = lines[i + 1];
 
-                if (match && nextLine && !nextLine.startsWith('#')) {
+                if (match && next && !next.startsWith('#')) {
                     variants.push({
                         quality: parseInt(match[1]),
-                        url: new URL(nextLine, url).href
+                        url: new URL(next, url).href
                     });
                 }
             }
@@ -34,7 +34,7 @@ async function extractHlsVariants(url) {
     }
 }
 
-// ------------------ QUALITY DETECTOR ------------------
+// ------------------ HELPERS ------------------
 
 function detectQuality(url) {
     if (!url) return 720;
@@ -45,74 +45,107 @@ function detectQuality(url) {
     return 720;
 }
 
-// ------------------ WAREZ / EMBED SCRAPER ------------------
+function scoreSource(name, quality) {
+    let score = quality;
 
-async function getWarezStreams(tmdbId, mediaType, season, episode) {
+    if (name.includes('Filemoon')) score += 200;
+    if (name.includes('StreamWish')) score += 180;
+    if (name.includes('Warez')) score += 150;
+    if (name.includes('VidSrc')) score += 120;
+    if (name.includes('SuperFlix')) score += 50;
+
+    return score;
+}
+
+function dedupe(results) {
+    const seen = new Set();
+    return results.filter(r => {
+        if (seen.has(r.url)) return false;
+        seen.add(r.url);
+        return true;
+    });
+}
+
+// ------------------ GENERIC M3U8 EXTRACTOR ------------------
+
+async function extractFromHtml(html, referer, name) {
     const results = [];
 
-    try {
-        // 🔥 Try vidsrc new embed (better than old chain)
-        let embedUrl;
+    const matches = [...html.matchAll(/https?:\/\/[^"' ]+\.m3u8[^"' ]*/g)];
 
-        if (mediaType === 'movie') {
-            embedUrl = `https://vidsrc.xyz/embed/movie/${tmdbId}`;
+    for (const m of matches) {
+        const url = m[0];
+
+        const variants = await extractHlsVariants(url);
+
+        if (variants.length > 0) {
+            variants.forEach(v => {
+                results.push({
+                    name: `${name} ${v.quality}p`,
+                    url: v.url,
+                    quality: v.quality,
+                    headers: { Referer: referer, 'User-Agent': UA }
+                });
+            });
         } else {
-            embedUrl = `https://vidsrc.xyz/embed/tv/${tmdbId}/${season}/${episode}`;
+            results.push({
+                name: `${name} ${detectQuality(url)}p`,
+                url,
+                quality: detectQuality(url),
+                headers: { Referer: referer, 'User-Agent': UA }
+            });
         }
-
-        const res = await fetch(embedUrl, { headers: { 'User-Agent': UA } });
-        const html = await res.text();
-
-        // Extract ALL iframe sources (important)
-        const matches = [...html.matchAll(/<iframe[^>]+src=["']([^"']+)/g)];
-
-        for (const m of matches) {
-            let src = m[1];
-
-            if (src.startsWith('//')) src = 'https:' + src;
-
-            try {
-                const iframeRes = await fetch(src, { headers: { 'User-Agent': UA } });
-                const iframeHtml = await iframeRes.text();
-
-                // Look for m3u8 directly
-                const m3u8Match = iframeHtml.match(/https?:\/\/[^"']+\.m3u8[^"']*/);
-
-                if (m3u8Match) {
-                    const masterUrl = m3u8Match[0];
-
-                    const variants = await extractHlsVariants(masterUrl);
-
-                    if (variants.length > 0) {
-                        variants.forEach(v => {
-                            results.push({
-                                name: `Warez ${v.quality}p`,
-                                url: v.url,
-                                quality: v.quality,
-                                headers: { 'User-Agent': UA }
-                            });
-                        });
-                    } else {
-                        results.push({
-                            name: `Warez ${detectQuality(masterUrl)}p`,
-                            url: masterUrl,
-                            quality: detectQuality(masterUrl),
-                            headers: { 'User-Agent': UA }
-                        });
-                    }
-                }
-
-            } catch {}
-        }
-
-    } catch {}
+    }
 
     return results;
 }
 
-// ------------------ SUPERFLIX (FALLBACK) ------------------
+// ------------------ PROVIDER 1: VIDSRC ------------------
 
-async function getSuperflixFallback(tmdbId, mediaType, season, episode) {
+async function vidsrcProvider(tmdbId, mediaType, season, episode) {
+    try {
+        const url = mediaType === 'movie'
+            ? `https://vidsrc.xyz/embed/movie/${tmdbId}`
+            : `https://vidsrc.xyz/embed/tv/${tmdbId}/${season}/${episode}`;
+
+        const res = await fetch(url, { headers: { 'User-Agent': UA } });
+        const html = await res.text();
+
+        return await extractFromHtml(html, url, 'VidSrc');
+
+    } catch {
+        return [];
+    }
+}
+
+// ------------------ PROVIDER 2: ALT EMBEDS ------------------
+
+async function altEmbedProvider(tmdbId, mediaType, season, episode) {
+    const sources = [
+        mediaType === 'movie'
+            ? `https://multiembed.mov/?video_id=${tmdbId}`
+            : `https://multiembed.mov/?video_id=${tmdbId}&s=${season}&e=${episode}`
+    ];
+
+    let results = [];
+
+    await Promise.all(sources.map(async (src) => {
+        try {
+            const res = await fetch(src, { headers: { 'User-Agent': UA } });
+            const html = await res.text();
+
+            const extracted = await extractFromHtml(html, src, 'Embed');
+            results.push(...extracted);
+
+        } catch {}
+    }));
+
+    return results;
+}
+
+// ------------------ PROVIDER 3: SUPERFLIX ------------------
+
+async function superflixProvider(tmdbId, mediaType, season, episode) {
     try {
         const { getStreams } = require('./superflix');
         return await getStreams(tmdbId, mediaType, season, episode);
@@ -124,20 +157,29 @@ async function getSuperflixFallback(tmdbId, mediaType, season, episode) {
 // ------------------ MAIN ------------------
 
 async function getStreams(tmdbId, mediaType, season = 1, episode = 1) {
-    let results = [];
 
-    // 🔥 1. Try Warez-style sources FIRST
-    const warez = await getWarezStreams(tmdbId, mediaType, season, episode);
-    results.push(...warez);
+    // ⚡ RUN EVERYTHING IN PARALLEL
+    const [vidsrc, embed, superflix] = await Promise.all([
+        vidsrcProvider(tmdbId, mediaType, season, episode),
+        altEmbedProvider(tmdbId, mediaType, season, episode),
+        superflixProvider(tmdbId, mediaType, season, episode)
+    ]);
 
-    // 🔁 2. Fallback to SuperFlix if needed
-    if (results.length === 0) {
-        const fallback = await getSuperflixFallback(tmdbId, mediaType, season, episode);
-        results.push(...fallback);
-    }
+    let results = [
+        ...vidsrc,
+        ...embed,
+        ...superflix
+    ];
 
-    // 🎯 Sort best quality first
-    results.sort((a, b) => b.quality - a.quality);
+    // 🧼 Remove duplicates
+    results = dedupe(results);
+
+    // 🎯 Score + sort
+    results.sort((a, b) => {
+        const scoreA = scoreSource(a.name, a.quality);
+        const scoreB = scoreSource(b.name, b.quality);
+        return scoreB - scoreA;
+    });
 
     return results;
 }
