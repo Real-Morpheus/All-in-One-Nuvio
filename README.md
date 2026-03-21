@@ -29,6 +29,7 @@ A collection of high-quality local scrapers for the Nuvio streaming application.
 [![showbox.png](https://i.postimg.cc/nzzVyqYQ/showbox.png)](https://postimg.cc/67kNR2P9) ShowBox | 🏴󠁧󠁢󠁥󠁮󠁧󠁿 | Film & Serial | 4K 1080p / 720p | ✅ | ✅ |
 [![streamflix.png](https://i.postimg.cc/sXFMmJyD/streamflix.png)](https://postimg.cc/McDZKVvh) Streamflix | 🏴󠁧󠁢󠁥󠁮󠁧󠁿 | Film & Serial | 1080p / 720p | ✅ | ✅ |
 | [![uhdmovies.png](https://i.postimg.cc/VkCg1svN/uhdmovies.png)](https://postimg.cc/3k3mFTgM) UHDMovies | 🏴󠁧󠁢󠁥󠁮󠁧󠁿 🇮🇳 | Film & Serial | 4K / 1080p / 720p | ✅ | ❌ |
+| [![videasy.png](https://i.postimg.cc/MpML0kPV/videasy.png)](https://postimg.cc/VJw41hck) VidEasy | 🏴󠁧󠁢󠁥󠁮󠁧󠁿 | Film & Serial | 1080p / 720p | ✅ | ✅ |
 | 🎥 VidSrc | 🏴󠁧󠁢󠁥󠁮󠁧󠁿 | Film & Serial | 1080p / 720p | ✅ | ✅ |
 | 🎬 VidLink | 🏴󠁧󠁢󠁥󠁮󠁧󠁿 | Film & Serial | 1080p / 720p | ✅ | ✅ |
 
