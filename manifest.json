@@ -51,19 +51,6 @@
       "enabled": true,
       "formats": ["mkv"],
       "logo": "https://m.flixindia.xyz/onepieceskull.png",
-      "contentLanguage": ["en", "hi"]  
-    },
-    { 
-      "id": "twoembed",
-      "name": "TwoEmbed",
-      "description": "TwoEmbed - Alternative streaming provider with multiple sources",
-      "version": "2.0.0",
-      "author": "JK",
-      "supportedTypes": ["movie", "tv"],
-      "filename": "src/providers/twoembed.js",
-      "enabled": true,
-      "formats": ["mp4", "mkv", "m3u8"],
-      "logo": "https://www.twoembed.com/favicon.ico",
       "contentLanguage": ["en", "hi"]
     },
     { 
@@ -105,6 +92,19 @@
       "formats": ["mp4", "m3u8"],
       "logo": "",
       "contentLanguage": ["en"]
+    },
+    { 
+      "id": "brazucaplay",
+      "name": "BrazucaPlay",
+      "description": "Brazuca Play - Movies & Series in English & Portuguese",
+      "version": "1.0.0",
+      "author": "Nuvio Team",
+      "supportedTypes": ["movie", "tv"],
+      "filename": "providers/brazucaplay.js",
+      "enabled": true,
+      "formats": ["mp4", "mkv", "m3u8"],
+      "logo": "",
+      "contentLanguage": ["en", "pt"]
     },
     {
       "id": "castle",
