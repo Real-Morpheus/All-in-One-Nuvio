@@ -431,15 +431,47 @@ function wsAllSeasons(movieKey, totalSeasons) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Stream builder — Nuvio format with branding
+// Stream builder — Nuvio format with rich info + branding
+//
+// info object (all optional):
+//   { genre, duration, rating, imdb, epName, epOverview, epRuntime, seasons }
 // ─────────────────────────────────────────────────────────────────────────────
 
-function makeStream(url, quality, titleLine, langLabel) {
+function makeStream(url, quality, titleLine, langLabel, info) {
+  info = info || {};
+
+  // ── Name (picker row) ──────────────────────────────────────────────────────
+  var streamName = '🎬 StreamFlix | ' + quality + ' | ' + langLabel;
+
+  // ── Title detail lines ─────────────────────────────────────────────────────
+  var lines = [];
+  lines.push(titleLine);
+
+  // Quality + language
+  lines.push('📺 ' + quality + '  🔊 ' + langLabel);
+
+  // Genre + rating
+  var metaParts = [];
+  if (info.genre)    metaParts.push('🎭 ' + info.genre);
+  if (info.imdb)     metaParts.push('⭐ IMDb ' + info.imdb);
+  else if (info.rating) metaParts.push('⭐ ' + info.rating);
+  if (metaParts.length) lines.push(metaParts.join('  '));
+
+  // Runtime / seasons
+  var runtimeParts = [];
+  if (info.epRuntime)  runtimeParts.push('⏱ ' + info.epRuntime + 'min');
+  else if (info.duration) runtimeParts.push('⏱ ' + info.duration);
+  if (info.seasons)    runtimeParts.push('🗓 ' + info.seasons);
+  if (runtimeParts.length) lines.push(runtimeParts.join('  '));
+
+  // Episode name (TV only)
+  if (info.epName) lines.push('📌 ' + info.epName);
+
+  lines.push("by Sanchit · @S4NCHITT · Murph's Streams");
+
   return {
-    name    : '🎬 StreamFlix | ' + quality + ' | ' + langLabel,
-    title   : titleLine + '\n'
-            + '📺 ' + quality + '  🔊 ' + langLabel + '\n'
-            + "by Sanchit · @S4NCHITT · Murph's Streams",
+    name    : streamName,
+    title   : lines.join('\n'),
     url     : url,
     quality : quality,
     behaviorHints: {
@@ -450,7 +482,7 @@ function makeStream(url, quality, titleLine, langLabel) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Movie handler — identical logic to v3.1, Nuvio output
+// Movie handler — identical logic to v3.1, enriched Nuvio output
 // ─────────────────────────────────────────────────────────────────────────────
 
 function doMovie(item, config, tmdbTitle) {
@@ -463,6 +495,19 @@ function doMovie(item, config, tmdbTitle) {
 
   var langLabel = 'Hindi'; // audio detection disabled for speed — same as v3.1
 
+  // ── Extract info from data.json item fields ────────────────────────────────
+  var genre    = item.moviegenre    || item.genre        || item.Genre       || null;
+  var duration = item.movieduration || item.duration     || item.Duration    || null;
+  var imdb     = item.imdbrating    || item.imdb_rating  || item.ImdbRating  || null;
+  var year     = item.movieyear     || item.year         || item.Year        || null;
+
+  if (genre    && typeof genre    === 'string') genre    = genre.replace(/\|/g, ' · ').trim();
+  if (duration && typeof duration === 'string' && /[Ss]eason/.test(duration)) duration = null;
+  if (imdb     && typeof imdb     === 'number') imdb     = imdb.toFixed(1);
+
+  var titleLine = (tmdbTitle || name) + (year ? ' (' + year + ')' : '');
+  var info = { genre: genre, duration: duration, imdb: imdb };
+
   var checks = Object.keys(cdnTiers).map(function (q) {
     return pickMirror(cdnTiers[q], link).then(function (url) { return { q: q, url: url }; });
   });
@@ -472,7 +517,7 @@ function doMovie(item, config, tmdbTitle) {
     resolved.forEach(function (r) {
       if (!r.url || seen[r.url]) return;
       seen[r.url] = true;
-      streams.push(makeStream(r.url, r.q, tmdbTitle || name, langLabel));
+      streams.push(makeStream(r.url, r.q, titleLine, langLabel, info));
     });
     console.log(TAG + ' ' + streams.length + ' movie stream(s)');
     return streams;
@@ -487,9 +532,22 @@ function doTV(item, config, s, e, tmdbTitle) {
   var key  = getKey(item), name = getTitle(item);
   console.log(TAG + ' TV: "' + name + '" key="' + key + '" S' + s + 'E' + e);
 
-  var displayTitle = (tmdbTitle || name)
-    + ' S' + String(s).padStart(2, '0')
-    + 'E' + String(e).padStart(2, '0');
+  // ── Extract info from item fields ──────────────────────────────────────────
+  var _genre    = item.moviegenre    || item.genre       || item.Genre      || null;
+  var _imdb     = item.imdbrating    || item.imdb_rating || item.ImdbRating || null;
+  var _year     = item.movieyear     || item.year        || item.Year       || null;
+  var _seasons  = null;
+  var _dur      = item.movieduration || item.duration    || item.Duration   || null;
+  if (_genre  && typeof _genre  === 'string') _genre  = _genre.replace(/\|/g, ' · ').trim();
+  if (_imdb   && typeof _imdb   === 'number') _imdb   = _imdb.toFixed(1);
+  // Extract season count e.g. "3 Seasons" — keep for display
+  if (_dur && typeof _dur === 'string') {
+    var _sm = _dur.match(/(\d+)\s*[Ss]easons?/);
+    if (_sm) { _seasons = _sm[1] + ' Season' + (parseInt(_sm[1]) > 1 ? 's' : ''); }
+  }
+
+  var epSuffix   = ' S' + String(s).padStart(2, '0') + 'E' + String(e).padStart(2, '0');
+  var displayTitle = (tmdbTitle || name) + (_year ? ' (' + _year + ')' : '') + epSuffix;
 
   var cdnTiers = tiers(config);
   if (!Object.keys(cdnTiers).length) return Promise.resolve([]);
@@ -508,7 +566,7 @@ function doTV(item, config, s, e, tmdbTitle) {
       .then(function (eps) {
         console.log(TAG + ' WS ep keys for S' + s + ': [' + Object.keys(eps).join(',') + ']');
         var ep = eps[e - 1]; // 0-indexed — same as v3.1
-        if (ep && ep.link) { console.log(TAG + ' WS link: ' + ep.link); return ep.link; }
+        if (ep && ep.link) { console.log(TAG + ' WS link: ' + ep.link); return ep; }
         if (ep) console.log(TAG + ' WS ep data: ' + JSON.stringify(ep).substring(0, 100));
         return null;
       })
@@ -520,7 +578,7 @@ function doTV(item, config, s, e, tmdbTitle) {
             var seasonData = allSeasons[s];
             if (seasonData) {
               var ep = seasonData[e - 1];
-              if (ep && ep.link) { console.log(TAG + ' Multi-season WS link: ' + ep.link); return ep.link; }
+              if (ep && ep.link) { console.log(TAG + ' Multi-season WS link: ' + ep.link); return ep; }
             }
             return null;
           })
@@ -533,7 +591,13 @@ function doTV(item, config, s, e, tmdbTitle) {
     epLinkPromise = Promise.resolve(null);
   }
 
-  return epLinkPromise.then(function (epLink) {
+  // epData passed through from WS for episode name/runtime
+  var _epData = null;
+
+  return epLinkPromise.then(function (result) {
+    var epLink = result && result.link !== undefined ? result.link : result;
+    var _epName    = (result && result.name)    || null;
+    var _epRuntime = (result && result.runtime) || null;
     // Build candidate paths — WS link first, then pattern fallbacks — identical to v3.1
     var paths = [];
     if (epLink) paths.push(epLink);
@@ -554,7 +618,7 @@ function doTV(item, config, s, e, tmdbTitle) {
           var fp = epLink || ('tv/' + key + '/s' + s + '/episode' + e + '.mkv');
           var streams = Object.keys(cdnTiers)
             .filter(function (q) { return cdnTiers[q] && cdnTiers[q].length; })
-            .map(function (q) { return makeStream(cdnTiers[q][0] + fp, q, displayTitle, langLabel); });
+            .map(function (q) { return makeStream(cdnTiers[q][0] + fp, q, displayTitle, langLabel, { genre: _genre, imdb: _imdb, seasons: _seasons, epName: _epName, epRuntime: _epRuntime }); });
           console.log(TAG + ' ' + streams.length + ' fallback TV stream(s)');
           return Promise.resolve(streams);
         }
@@ -574,7 +638,7 @@ function doTV(item, config, s, e, tmdbTitle) {
         valid.forEach(function (r) {
           if (!r.url || seen[r.url]) return;
           seen[r.url] = true;
-          streams.push(makeStream(r.url, r.q, displayTitle, langLabel));
+          streams.push(makeStream(r.url, r.q, displayTitle, langLabel, { genre: _genre, imdb: _imdb, seasons: _seasons, epName: _epName, epRuntime: _epRuntime }));
         });
 
         if (!streams.length) return tryPath(idx + 1);
