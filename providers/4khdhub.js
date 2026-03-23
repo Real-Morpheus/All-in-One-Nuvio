@@ -8,9 +8,9 @@
  * ║  Manifest   › https://badboysxs-morpheus.hf.space/manifest.json             ║
  * ╠══════════════════════════════════════════════════════════════════════════════╣
  * ║  Supports   › Movies & Series (480p / 1080p / 2160p 4K / DV HDR)            ║
- * ║  Chain      › gadgetsweb.xyz redirect → HubCloud → extractor API            ║
- * ║  Info       › Quality · codec · language · size parsed from page HTML       ║
- * ║  Parallel   › All items resolved concurrently                               ║
+ * ║  Chain      › gadgetsweb.xyz → HubCloud → /bypass extractor API             ║
+ * ║  Info       › Quality · codec · language · size from page badges            ║
+ * ║  Parallel   › All cards resolved concurrently                               ║
  * ╚══════════════════════════════════════════════════════════════════════════════╝
  */
 
@@ -22,53 +22,44 @@ const cheerio = require('cheerio-without-node-native');
 // Configuration
 // ─────────────────────────────────────────────────────────────────────────────
 
-const BASE_URL       = 'https://4khdhub.dad';
-const TMDB_API_KEY   = '439c478a771f35c05022f9feabcca01c';
-const PLUGIN_TAG     = '[4KHDHub]';
-
-// Extractor API — resolves HubCloud/gadgetsweb obfuscated links to direct URLs
-const EXTRACTOR_API  = 'https://extractors-api.onrender.com';
+const BASE_URL      = 'https://4khdhub.dad';
+const TMDB_API_KEY  = '439c478a771f35c05022f9feabcca01c';
+const EXTRACTOR_API = 'https://extractors-api.onrender.com'; // endpoint: /bypass?url=
+const PLUGIN_TAG    = '[4KHDHub]';
 
 const DEFAULT_HEADERS = {
-  'User-Agent'      : 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
-  'Accept'          : 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+  'User-Agent'   : 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+  'Accept'       : 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
   'Accept-Language' : 'en-US,en;q=0.9',
+  'Referer'      : BASE_URL + '/',
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Simple LRU Cache (stream results + page searches)
+// Simple LRU Cache
 // ─────────────────────────────────────────────────────────────────────────────
 
 function LRUCache(max, ttlMs) {
   this.max  = max;
   this.ttl  = ttlMs;
-  this.map  = {};
-  this.keys = [];
+  this.data = {};
+  this.order = [];
 }
-
 LRUCache.prototype.get = function (k) {
-  var e = this.map[k];
+  var e = this.data[k];
   if (!e) return undefined;
-  if (Date.now() - e.ts > this.ttl) { delete this.map[k]; return undefined; }
+  if (Date.now() - e.ts > this.ttl) { delete this.data[k]; return undefined; }
   return e.v;
 };
-
 LRUCache.prototype.set = function (k, v) {
-  if (this.map[k]) {
-    this.map[k] = { v: v, ts: Date.now() };
-    return;
-  }
-  if (this.keys.length >= this.max) {
-    var oldest = this.keys.shift();
-    delete this.map[oldest];
-  }
-  this.keys.push(k);
-  this.map[k] = { v: v, ts: Date.now() };
+  if (this.data[k]) { this.data[k] = { v: v, ts: Date.now() }; return; }
+  if (this.order.length >= this.max) { delete this.data[this.order.shift()]; }
+  this.order.push(k);
+  this.data[k] = { v: v, ts: Date.now() };
 };
 
-var streamCache = new LRUCache(200, 30 * 60 * 1000);   // 30 min
-var metaCache   = new LRUCache(500, 24 * 60 * 60 * 1000); // 24 hr
-var pageCache   = new LRUCache(300, 60 * 60 * 1000);   // 1 hr
+var streamCache = new LRUCache(200, 30 * 60 * 1000);
+var metaCache   = new LRUCache(500, 24 * 60 * 60 * 1000);
+var pageCache   = new LRUCache(300, 60 * 60 * 1000);
 
 // ─────────────────────────────────────────────────────────────────────────────
 // HTTP Helpers
@@ -80,7 +71,7 @@ function fetchText(url, extraHeaders) {
     redirect : 'follow',
   })
     .then(function (res) {
-      if (!res.ok) throw new Error('HTTP ' + res.status + ' for ' + url);
+      if (!res.ok) throw new Error('HTTP ' + res.status);
       return res.text();
     })
     .catch(function (err) {
@@ -95,7 +86,7 @@ function fetchJson(url, extraHeaders) {
     redirect : 'follow',
   })
     .then(function (res) {
-      if (!res.ok) throw new Error('HTTP ' + res.status + ' for ' + url);
+      if (!res.ok) throw new Error('HTTP ' + res.status);
       return res.json();
     })
     .catch(function (err) {
@@ -105,7 +96,7 @@ function fetchJson(url, extraHeaders) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Levenshtein — title matching
+// Levenshtein Distance
 // ─────────────────────────────────────────────────────────────────────────────
 
 function levenshtein(s, t) {
@@ -114,18 +105,17 @@ function levenshtein(s, t) {
   if (!n) return m; if (!m) return n;
   var d = [];
   for (var i = 0; i <= n; i++) { d[i] = [i]; }
-  for (var j = 0; j <= m; j++) { d[0][j] = j; }
-  for (var i2 = 1; i2 <= n; i2++) {
+  for (var j = 0; j <= m; j++) { if (!d[0]) d[0] = []; d[0][j] = j; }
+  for (var i2 = 1; i2 <= n; i2++)
     for (var j2 = 1; j2 <= m; j2++) {
-      var cost = s[i2 - 1] === t[j2 - 1] ? 0 : 1;
-      d[i2][j2] = Math.min(d[i2-1][j2] + 1, d[i2][j2-1] + 1, d[i2-1][j2-1] + cost);
+      var cost = s[i2-1] === t[j2-1] ? 0 : 1;
+      d[i2][j2] = Math.min(d[i2-1][j2]+1, d[i2][j2-1]+1, d[i2-1][j2-1]+cost);
     }
-  }
   return d[n][m];
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// TMDB Lookup
+// TMDB
 // ─────────────────────────────────────────────────────────────────────────────
 
 function getTmdbDetails(tmdbId, type) {
@@ -133,95 +123,141 @@ function getTmdbDetails(tmdbId, type) {
   var hit = metaCache.get(cacheKey);
   if (hit) return Promise.resolve(hit);
 
-  var isTv  = (type === 'tv' || type === 'series');
-  var url   = 'https://api.themoviedb.org/3/' + (isTv ? 'tv' : 'movie') + '/' + tmdbId + '?api_key=' + TMDB_API_KEY;
+  var isTv = (type === 'tv' || type === 'series');
+  var url  = 'https://api.themoviedb.org/3/' + (isTv ? 'tv' : 'movie') + '/' + tmdbId + '?api_key=' + TMDB_API_KEY;
   console.log(PLUGIN_TAG + ' TMDB → ' + url);
 
-  return fetchJson(url).then(function (data) {
-    if (!data) return null;
-    var title    = isTv ? data.name  : data.title;
-    var dateStr  = isTv ? data.first_air_date : data.release_date;
-    var year     = dateStr ? parseInt(dateStr.slice(0, 4)) : 0;
-    var result   = { title: title || null, year: year, isTv: isTv };
+  return fetchJson(url).then(function (d) {
+    if (!d) return null;
+    var title   = isTv ? d.name  : d.title;
+    var dateStr = isTv ? d.first_air_date : d.release_date;
+    var year    = dateStr ? parseInt(dateStr.slice(0, 4)) : 0;
+    var result  = { title: title || null, year: year, isTv: isTv };
     if (title) metaCache.set(cacheKey, result);
     return result;
   });
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Page Info Parsers
-// The new 4khdhub.dad site has a very clean structure per download card:
-//
-//   .download-header  → card title + badges (size, language, source)
-//   .file-title       → actual MKV filename (encodes quality, codec, audio)
-//   .badge spans      → coloured pills for size, language, codec
-//
-// Example filename:
-//   Peaky.Blinders.The.Immortal.Man.2026.2160p.NF.WEB-DL.Multi.DDP5.1.DV.HDR.H.265-4kHDHub.Com.mkv
-// Example header title:
-//   Peaky Blinders: The Immortal Man (2160p WEB-DL DV HDR H265)
+// URL Helpers
 // ─────────────────────────────────────────────────────────────────────────────
 
-/**
- * Extract quality label from any text string.
- */
+function isGdrive(url) {
+  var u = (url || '').toLowerCase();
+  return u.includes('drive.google.com') ||
+         u.includes('googleusercontent.com') ||
+         (u.includes('googleapis.com') && !u.includes('tmdb'));
+}
+
+function isPixelDrain(url) {
+  return (url || '').toLowerCase().includes('pixeldrain');
+}
+
+function isR2Cdn(url) {
+  var u = (url || '').toLowerCase();
+  return u.includes('.r2.dev') || u.includes('r2.cloudflarestorage');
+}
+
+function isR2CdnSigned(url) {
+  if (!isR2Cdn(url)) return false;
+  try {
+    var token = new URL(url).searchParams.get('token');
+    return !!(token && token.length > 4);
+  } catch (e) { return false; }
+}
+
+function normalisePixelDrain(url) {
+  try {
+    var u = new URL(url);
+    var parts = u.pathname.split('/').filter(Boolean);
+    var fileId = null;
+    if (parts[0] === 'u'   && parts[1]) fileId = parts[1];
+    else if (parts[0] === 'file' && parts[1]) fileId = parts[1];
+    else if (parts[0] === 'api' && parts[1] === 'file' && parts[2]) fileId = parts[2];
+    if (!fileId && parts.length === 1 && parts[0].length > 4) fileId = parts[0];
+    return fileId ? 'https://pixeldrain.com/api/file/' + fileId + '?download' : null;
+  } catch (e) { return null; }
+}
+
+function serverLabel(url) {
+  var u = (url || '').toLowerCase();
+  if (u.includes('pixeldrain'))                    return 'PixelDrain';
+  if (u.includes('pub-') && u.includes('.r2.dev')) return 'R2 CDN';
+  if (u.includes('.r2.dev'))                       return 'R2 CDN';
+  if (u.includes('mayhem') || u.includes('/fsl')) return 'FSL';
+  if (u.includes('gofile'))                        return 'GoFile';
+  if (u.includes('mega.nz'))                       return 'Mega';
+  if (u.includes('workers.dev'))                   return 'CF Worker';
+  if (u.includes('hubcloud'))                      return 'HubCloud';
+  return 'Direct';
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// atob Polyfill + rot13
+// ─────────────────────────────────────────────────────────────────────────────
+
+function atobPolyfill(input) {
+  var chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/=';
+  var str = String(input).replace(/=+$/, '');
+  var output = '';
+  for (var bc = 0, bs, buffer, i = 0;
+    (buffer = str.charAt(i++));
+    ~buffer && ((bs = bc % 4 ? bs * 64 + buffer : buffer), bc++ % 4)
+      ? (output += String.fromCharCode(255 & (bs >> ((-2 * bc) & 6)))) : 0) {
+    buffer = chars.indexOf(buffer);
+  }
+  return output;
+}
+
+function rot13(str) {
+  return str.replace(/[a-zA-Z]/g, function (c) {
+    return String.fromCharCode(
+      (c <= 'Z' ? 90 : 122) >= (c = c.charCodeAt(0) + 13) ? c : c - 26
+    );
+  });
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Info Parsers — read quality, codec, language, size from page HTML
+// ─────────────────────────────────────────────────────────────────────────────
+
 function extractQuality(text) {
   var t = (text || '').toUpperCase();
-  if (/\b(2160P|4K)\b/.test(t))  return '4K (2160p)';
+  if (/\b(2160P|4K)\b/.test(t))  return '4K';
   if (/\b1080P\b/.test(t))       return '1080p';
   if (/\b720P\b/.test(t))        return '720p';
   if (/\b480P\b/.test(t))        return '480p';
-  return null;
+  return 'HD';
 }
 
-/**
- * Extract video codec from filename or header.
- * Returns e.g. "H265", "x264", "AV1", "HEVC", "DV HDR H265"
- */
 function extractCodec(text) {
   var t = text || '';
-  // Order matters — check combined HDR variants first
-  if (/DV[\s.]HDR[\s.]H[\s.]?265/i.test(t) || /HDR[\s.-]DV[\s.]H[\s.]?265/i.test(t)) return 'DV HDR H265';
-  if (/DV[\s.]HDR/i.test(t))                 return 'DV HDR';
-  if (/HDR[\s.-]DV/i.test(t))                return 'HDR DV';
-  if (/\bHDR\b/i.test(t))                    return 'HDR';
-  if (/\bDV\b/i.test(t))                     return 'DV';
-  if (/H[\s.]?265|HEVC/i.test(t))            return 'H265/HEVC';
-  if (/H[\s.]?264|x264/i.test(t))            return 'x264';
-  if (/\bAV1\b/i.test(t))                    return 'AV1';
+  if (/DV[\s.]?HDR[\s.]?H[\s.]?265/i.test(t)) return 'DV HDR H265';
+  if (/HDR[\s.-]DV[\s.]?H[\s.]?265/i.test(t)) return 'HDR DV H265';
+  if (/DV[\s.]?HDR/i.test(t))                  return 'DV HDR';
+  if (/HDR[\s.-]DV/i.test(t))                  return 'HDR DV';
+  if (/\bHDR\b/i.test(t))                       return 'HDR';
+  if (/H[\s.]?265|HEVC/i.test(t))               return 'HEVC';
+  if (/H[\s.]?264|x264/i.test(t))               return 'x264';
+  if (/\bAV1\b/i.test(t))                       return 'AV1';
   return null;
 }
 
-/**
- * Extract source label (WEB-DL, BluRay, etc.)
- */
-function extractSource(text) {
-  var m = (text || '').match(/\b(WEB[\s-]?DL|WEBRip|BluRay|Blu[\s-]?Ray|BRRip|HDTV|HDCAM|NF|AMZN|DSNP|HBO|ATVP)\b/i);
-  return m ? m[1].toUpperCase().replace(/\s/g, '-') : null;
-}
-
-/**
- * Extract audio format (DDP5.1, Atmos, AAC, etc.)
- */
 function extractAudio(text) {
-  if (/DDP5\.1.*Atmos|Atmos.*DDP5\.1/i.test(text)) return 'DDP5.1 Atmos';
-  if (/DDP5\.1/i.test(text))                        return 'DDP5.1';
-  if (/DDP/i.test(text))                             return 'DDP';
-  if (/Atmos/i.test(text))                           return 'Atmos';
-  if (/AAC5\.1/i.test(text))                         return 'AAC5.1';
-  if (/\bAAC\b/i.test(text))                         return 'AAC';
-  if (/\bAC3\b/i.test(text))                         return 'AC3';
+  var t = text || '';
+  if (/DDP5\.1.*Atmos|Atmos.*DDP/i.test(t)) return 'DDP5.1 Atmos';
+  if (/DDP5\.1/i.test(t))                   return 'DDP5.1';
+  if (/AAC5\.1/i.test(t))                   return 'AAC5.1';
+  if (/\bAtmos\b/i.test(t))                 return 'Atmos';
+  if (/\bDDP\b/i.test(t))                   return 'DDP';
+  if (/\bAAC\b/i.test(t))                   return 'AAC';
   return null;
 }
 
-/**
- * Parse languages from badge text or header/filename.
- * Returns array like ["Hindi", "Tamil", "Telugu", "English"]
- */
 function extractLanguages(text) {
   var t = text || '';
   var langs = [];
-  var LANG_PATTERNS = [
+  var LANG_MAP = [
     ['Hindi',      /\bHindi\b/i],
     ['English',    /\bEnglish\b/i],
     ['Tamil',      /\bTamil\b/i],
@@ -241,171 +277,109 @@ function extractLanguages(text) {
     ['Turkish',    /\bTurkish\b/i],
     ['Portuguese', /\bPortuguese\b/i],
   ];
-  // Also handle "Multi" flag
-  if (/\bMulti\b/i.test(t)) langs.push('Multi');
-
-  LANG_PATTERNS.forEach(function (pair) {
+  LANG_MAP.forEach(function (pair) {
     if (pair[1].test(t)) langs.push(pair[0]);
   });
+  // Check for "Multi" — means multiple langs
+  if (/\bMulti\b/i.test(t) && !langs.length) langs.push('Multi-Audio');
   return langs;
 }
 
-/**
- * Extract file size from badge text like "17.07 GB", "3.24 GB".
- */
 function extractSize(text) {
-  var m = (text || '').match(/([\d.]+\s*(?:GB|MB|TB|KB))/i);
-  return m ? m[1].replace(/\s+/, '') : null;
+  var m = (text || '').match(/([\d.]+\s*(?:GB|MB|TB))/i);
+  return m ? m[1].replace(/\s+/g, '') : null;
 }
 
 /**
- * Full card info object parsed from a .download-item element.
+ * Parse all metadata from a .download-item card element.
+ * The new 4khdhub.dad page has this structure per card:
  *
- * Returns:
- *   { quality, codec, source, audio, languages, size, filename, headerTitle }
+ *   .download-header
+ *     .flex-1           → "Peaky Blinders: The Immortal Man (2160p WEB-DL DV HDR H265)"
+ *     code > span.badge → coloured pills: size, languages, source
+ *   .file-title         → "Peaky.Blinders...2026.2160p.NF.WEB-DL.Multi.DDP5.1.DV.HDR.H.265-4kHDHub.Com.mkv"
+ *   a.btn               → "Download HubCloud" href=gadgetsweb.xyz/?id=...
+ *                          "Download HubDrive"  href=gadgetsweb.xyz/?id=...
  */
 function parseCardInfo($, el) {
   var header     = $(el).find('.download-header').first();
-  var headerText = header.find('.flex-1').text().trim();
+  var headerText = header.find('.flex-1').clone().children('code').remove().end().text().trim();
   var fileTitle  = $(el).find('.file-title').text().trim();
 
-  // Combine all badge text for language / size extraction
+  // Collect all badge text (size, language, source)
   var badgeText = '';
-  header.find('.badge').each(function (_, b) { badgeText += ' ' + $(b).text().trim(); });
+  header.find('code .badge, code span').each(function (_, b) {
+    badgeText += ' ' + $(b).text().trim();
+  });
 
-  // Combined text corpus for parsing
   var corpus = headerText + ' ' + fileTitle + ' ' + badgeText;
 
   var quality   = extractQuality(corpus);
-  var codec     = extractCodec(fileTitle || headerText);
-  var source    = extractSource(corpus);
+  var codec     = extractCodec(fileTitle + ' ' + headerText);
   var audio     = extractAudio(fileTitle);
   var languages = extractLanguages(badgeText + ' ' + headerText);
   var size      = extractSize(badgeText);
 
+  // Source label
+  var srcMatch = corpus.match(/\b(WEB[\s-]?DL|WEBRip|BluRay|BRRip|HDCAM|NF|AMZN|DSNP)\b/i);
+  var source   = srcMatch ? srcMatch[1].toUpperCase() : 'WEB-DL';
+
   return {
-    quality     : quality,
-    codec       : codec,
-    source      : source,
-    audio       : audio,
-    languages   : languages,
-    size        : size,
-    filename    : fileTitle,
-    headerTitle : headerText,
+    quality   : quality,
+    codec     : codec,
+    audio     : audio,
+    source    : source,
+    languages : languages,
+    size      : size,
+    filename  : fileTitle,
   };
 }
 
-/**
- * Build the human-readable info label shown in the stream name/title.
- * e.g. "4K (2160p) · WEB-DL · DV HDR H265 · DDP5.1 Atmos · 17.07GB"
- */
-function buildInfoLabel(info) {
-  var parts = [];
-  if (info.quality)  parts.push(info.quality);
-  if (info.source)   parts.push(info.source);
-  if (info.codec)    parts.push(info.codec);
-  if (info.audio)    parts.push(info.audio);
-  if (info.size)     parts.push(info.size);
-  return parts.join(' · ') || 'Unknown';
-}
-
-function formatLanguages(langs) {
-  if (!langs || !langs.length) return null;
-  return langs.join(' + ');
-}
-
 // ─────────────────────────────────────────────────────────────────────────────
-// Server label from URL
-// ─────────────────────────────────────────────────────────────────────────────
-
-function serverLabel(url) {
-  var u = (url || '').toLowerCase();
-  if (u.includes('pixeldrain'))                    return 'PixelDrain';
-  if (u.includes('.r2.dev') || u.includes('r2.')) return 'R2 CDN';
-  if (u.includes('mayhem') || u.includes('/fsl')) return 'FSL';
-  if (u.includes('gofile'))                        return 'GoFile';
-  if (u.includes('mega.nz'))                       return 'Mega';
-  if (u.includes('workers.dev'))                   return 'CF Worker';
-  if (u.includes('hubcloud'))                      return 'HubCloud';
-  if (u.includes('gadgets'))                       return 'GadgetsWeb';
-  return 'Direct';
-}
-
-function isGdrive(url) {
-  var u = (url || '').toLowerCase();
-  return u.includes('drive.google.com') ||
-         u.includes('googleusercontent.com') ||
-         (u.includes('googleapis.com') && !u.includes('tmdb'));
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// atob Polyfill + rot13 (for obfuscated redirect resolution — old chain fallback)
-// ─────────────────────────────────────────────────────────────────────────────
-
-function atobPolyfill(input) {
-  var chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/=';
-  var str = String(input).replace(/=+$/, '');
-  var output = '';
-  for (var bc = 0, bs, buffer, i = 0;
-    (buffer = str.charAt(i++));
-    ~buffer && ((bs = bc % 4 ? bs * 64 + buffer : buffer), bc++ % 4)
-      ? (output += String.fromCharCode(255 & (bs >> ((-2 * bc) & 6))))
-      : 0) {
-    buffer = chars.indexOf(buffer);
-  }
-  return output;
-}
-
-function rot13(str) {
-  return str.replace(/[a-zA-Z]/g, function (c) {
-    return String.fromCharCode(
-      (c <= 'Z' ? 90 : 122) >= (c = c.charCodeAt(0) + 13) ? c : c - 26
-    );
-  });
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Redirect resolvers
-// New site uses gadgetsweb.xyz?id=BASE64 → resolves to HubCloud or direct URL
+// Redirect Chain
+// gadgetsweb.xyz/?id=BASE64 → follows redirect → HubCloud URL
+// Then: HubCloud URL → /bypass extractor API → direct stream URLs
 // ─────────────────────────────────────────────────────────────────────────────
 
 /**
- * Resolve a gadgetsweb.xyz/?id=... redirect URL to the target HubCloud URL.
- * These redirects respond with a redirect Location header or meta-refresh.
+ * Resolve gadgetsweb.xyz redirect → target URL (usually a HubCloud page).
+ * Strategy: follow redirect chain normally; read res.url for final destination.
  */
-function resolveGadgetsWeb(redirectUrl) {
-  return fetch(redirectUrl, {
-    headers  : DEFAULT_HEADERS,
-    redirect : 'manual', // Don't follow — we want the Location header
+function resolveGadgetsWeb(gadgetsUrl) {
+  console.log(PLUGIN_TAG + ' gadgetsweb → ' + gadgetsUrl.slice(0, 80));
+  return fetch(gadgetsUrl, {
+    headers  : Object.assign({}, DEFAULT_HEADERS, { 'Referer': BASE_URL + '/' }),
+    redirect : 'follow',
   })
     .then(function (res) {
-      // 301/302 redirect — grab Location
-      var location = res.headers.get('location');
-      if (location && location.startsWith('http')) return location;
-
-      // Follow up to 5 hops manually if needed
+      var finalUrl = res.url || gadgetsUrl;
+      // If we ended up somewhere useful (not back at gadgetsweb), return it
+      if (!finalUrl.includes('gadgetsweb') && finalUrl.startsWith('http')) {
+        return finalUrl;
+      }
+      // Try to find redirect target in the page body
       return res.text().then(function (html) {
         // meta refresh
-        var m = html.match(/content=["'][^"']*url=([^"']+)["']/i);
-        if (m) return m[1];
+        var m = html.match(/url=([^\s"']+)/i);
+        if (m && m[1].startsWith('http')) return m[1];
         // window.location
         var m2 = html.match(/window\.location(?:\.href)?\s*=\s*["']([^"']+)["']/i);
         if (m2) return m2[1];
-        // Try following redirect normally
-        return fetch(redirectUrl, { headers: DEFAULT_HEADERS, redirect: 'follow' })
-          .then(function (res2) { return res2.url; })
-          .catch(function () { return null; });
+        // Any HubCloud href
+        var m3 = html.match(/href=["']([^"']*hubcloud[^"']+)["']/i);
+        if (m3) return m3[1];
+        console.log(PLUGIN_TAG + ' gadgetsweb body fallback failed');
+        return null;
       });
     })
     .catch(function (err) {
-      console.log(PLUGIN_TAG + ' gadgetsweb resolve failed: ' + err.message);
+      console.log(PLUGIN_TAG + ' gadgetsweb resolve error: ' + err.message);
       return null;
     });
 }
 
 /**
- * Resolve the old obfuscated redirect pattern (4khdhub.fans-style, kept as
- * fallback in case redirect chains still use it).
+ * Resolve old-style obfuscated redirect (4khdhub.fans pattern, kept as fallback).
  */
 function resolveObfuscatedRedirect(redirectUrl) {
   return fetchText(redirectUrl).then(function (html) {
@@ -422,179 +396,232 @@ function resolveObfuscatedRedirect(redirectUrl) {
         if (decoded.startsWith('http')) return decoded;
       }
     } catch (e) {
-      console.log(PLUGIN_TAG + ' Obfuscated resolve error: ' + e.message);
+      console.log(PLUGIN_TAG + ' Obfuscated decode error: ' + e.message);
     }
     return null;
   });
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Extractor API — resolves HubCloud → FSL / PixelDrain / R2 direct links
-// ─────────────────────────────────────────────────────────────────────────────
-
-function resolveViaExtractorApi(hubCloudUrl) {
-  var apiUrl = EXTRACTOR_API + '/extract?url=' + encodeURIComponent(hubCloudUrl);
-  console.log(PLUGIN_TAG + ' Extractor API → ' + hubCloudUrl.slice(0, 80));
-
-  return fetchJson(apiUrl).then(function (data) {
-    if (!data) return [];
-    var results = [];
-
-    // Top-level direct URL
-    if (data.url && !isGdrive(data.url)) {
-      results.push({ url: data.url, label: data.name || data.label || '', size: data.size || null, direct: true });
+/**
+ * Extract a URL value from any shape of API response object.
+ */
+function extractStreamUrl(s) {
+  if (!s || typeof s !== 'object') return null;
+  var fields = ['url','link','src','stream','directUrl','streamUrl','download','downloadUrl','href','file','source','path'];
+  for (var i = 0; i < fields.length; i++) {
+    var val = s[fields[i]];
+    if (val && typeof val === 'string' && val.startsWith('http')) return val;
+  }
+  var nested = ['data','result','info','media'];
+  for (var j = 0; j < nested.length; j++) {
+    var inner = s[nested[j]];
+    if (inner && typeof inner === 'object' && !Array.isArray(inner)) {
+      var u = extractStreamUrl(inner);
+      if (u) return u;
     }
-
-    // Sources array
-    if (Array.isArray(data.sources)) {
-      data.sources.forEach(function (s) {
-        if (s.url && !isGdrive(s.url)) {
-          results.push({ url: s.url, label: s.name || s.label || '', size: s.size || null, direct: true });
-        }
-      });
-    }
-
-    // Links array
-    if (Array.isArray(data.links)) {
-      data.links.forEach(function (l) {
-        var url = typeof l === 'string' ? l : (l.url || l.link || null);
-        if (url && !isGdrive(url)) {
-          results.push({ url: url, label: l.label || l.name || '', size: l.size || null, direct: true });
-        }
-      });
-    }
-
-    console.log(PLUGIN_TAG + ' Extractor returned ' + results.length + ' link(s)');
-    return results;
-  });
+  }
+  return null;
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Download link extraction from a single .download-item card
-// New site structure:
-//   .download-header → card header with title + badges
-//   .file-title      → MKV filename
-//   .grid.grid-cols-2 a.btn → "Download HubCloud" and "Download HubDrive" buttons
-//   href = gadgetsweb.xyz/?id=BASE64
-// ─────────────────────────────────────────────────────────────────────────────
+/**
+ * Call the extractor API /bypass endpoint with a HubCloud URL.
+ * Returns array of { url, label, size, direct }.
+ */
+function resolveViaExtractorApi(hubCloudUrl) {
+  var apiUrl = EXTRACTOR_API + '/bypass?url=' + encodeURIComponent(hubCloudUrl);
+  console.log(PLUGIN_TAG + ' Extractor API → ' + apiUrl.slice(0, 120));
+
+  return fetch(apiUrl, {
+    headers  : { 'User-Agent': DEFAULT_HEADERS['User-Agent'] },
+    redirect : 'follow',
+  })
+    .then(function (res) {
+      if (!res.ok) throw new Error('HTTP ' + res.status);
+      return res.json();
+    })
+    .then(function (data) {
+      if (!data) return [];
+      var results = [];
+
+      console.log(PLUGIN_TAG + ' API keys: ' + Object.keys(data).join(', '));
+
+      // Process a single stream entry
+      function processEntry(s, label, size) {
+        var streamUrl = extractStreamUrl(s) || (typeof s === 'string' && s.startsWith('http') ? s : null);
+        if (!streamUrl) return;
+
+        // Fix pixeldrain
+        if (isPixelDrain(streamUrl)) {
+          streamUrl = normalisePixelDrain(streamUrl);
+          if (!streamUrl) return;
+        }
+
+        if (isGdrive(streamUrl)) return;
+        // Skip unsigned R2
+        if (isR2Cdn(streamUrl) && !isR2CdnSigned(streamUrl)) return;
+
+        var direct = isPixelDrain(streamUrl) || isR2CdnSigned(streamUrl);
+        var qualHint = (s && (s.quality || s.label || s.name)) || label || '';
+        var sizeHint = (s && (s.size || s.filesize)) || size || null;
+
+        console.log(PLUGIN_TAG + ' ✔ stream (' + (direct ? 'direct' : 'proxy') + '): ' + streamUrl.slice(0, 80));
+        results.push({ url: streamUrl, label: qualHint, size: sizeHint, direct: direct });
+      }
+
+      // streams[] array
+      if (Array.isArray(data.streams) && data.streams.length) {
+        data.streams.forEach(function (s) { processEntry(s, '', null); });
+      }
+
+      // links[] array
+      if (!results.length && Array.isArray(data.links) && data.links.length) {
+        data.links.forEach(function (s) { processEntry(s, '', null); });
+      }
+
+      // top-level url field
+      if (!results.length && data.url) {
+        processEntry({ url: data.url }, data.label || '', data.size || null);
+      }
+
+      console.log(PLUGIN_TAG + ' Extractor returned ' + results.length + ' stream(s)');
+      return results;
+    })
+    .catch(function (err) {
+      console.log(PLUGIN_TAG + ' Extractor API error: ' + err.message);
+      return [];
+    });
+}
 
 /**
- * Extract raw gadgetsweb/hubcloud URLs from a download card element.
- * Returns array of { url, type } where type is 'hubcloud' or 'hubdrive'.
+ * Full resolution chain for one download card:
+ * gadgetsweb.xyz → HubCloud URL → extractor /bypass → direct stream(s)
  */
-function extractCardLinks($, el) {
-  var links = [];
+function resolveCard($, el) {
+  // Collect all download button hrefs from the card
+  var hubCloudUrl = null;
+  var hubDriveUrl = null;
 
-  // Find all download buttons in the card
-  $(el).find('a.btn[href]').each(function (_, a) {
+  $(el).find('a.btn[href], a[href*="gadgetsweb"]').each(function (_, a) {
     var href = $(a).attr('href') || '';
     var text = $(a).text().trim().toLowerCase();
     if (!href) return;
-
-    if (text.includes('hubcloud') || href.includes('gadgetsweb')) {
-      links.push({ url: href, type: 'hubcloud' });
-    } else if (text.includes('hubdrive')) {
-      links.push({ url: href, type: 'hubdrive' });
+    if ((text.includes('hubcloud') || href.includes('gadgetsweb')) && !hubCloudUrl) {
+      hubCloudUrl = href;
+    } else if (text.includes('hubdrive') && !hubDriveUrl) {
+      hubDriveUrl = href;
     }
   });
 
-  return links;
-}
+  var entryUrl = hubCloudUrl || hubDriveUrl;
+  if (!entryUrl) {
+    console.log(PLUGIN_TAG + ' No download button found in card');
+    return Promise.resolve([]);
+  }
 
-/**
- * Fully resolve a single download card:
- * gadgetsweb → HubCloud URL → extractor API → direct stream URLs
- *
- * Returns array of { url, label, size, direct }
- */
-function resolveCard($, el) {
-  var cardLinks = extractCardLinks($, el);
-  if (!cardLinks.length) return Promise.resolve([]);
+  // Step 1: Resolve gadgetsweb redirect → HubCloud URL
+  var resolvePromise;
+  if (entryUrl.includes('gadgetsweb')) {
+    resolvePromise = resolveGadgetsWeb(entryUrl).then(function (resolved) {
+      if (resolved) return resolved;
+      // Fallback: try obfuscated decode
+      return resolveObfuscatedRedirect(entryUrl);
+    });
+  } else {
+    // Direct hubcloud or other URL
+    resolvePromise = Promise.resolve(entryUrl);
+  }
 
-  // Prefer HubCloud over HubDrive; try both, use first that works
-  var hubCloudEntry = cardLinks.find(function (l) { return l.type === 'hubcloud'; });
-  var hubDriveEntry = cardLinks.find(function (l) { return l.type === 'hubdrive'; });
-  var entry = hubCloudEntry || hubDriveEntry;
-
-  if (!entry) return Promise.resolve([]);
-
-  console.log(PLUGIN_TAG + ' Resolving gadgetsweb: ' + entry.url.slice(0, 80));
-
-  // Step 1: gadgetsweb redirect → HubCloud URL
-  return resolveGadgetsWeb(entry.url).then(function (hubCloudUrl) {
-    if (!hubCloudUrl) {
-      // Fallback: try obfuscated pattern
-      return resolveObfuscatedRedirect(entry.url);
-    }
-    return hubCloudUrl;
-  }).then(function (hubCloudUrl) {
-    if (!hubCloudUrl) {
-      console.log(PLUGIN_TAG + ' Could not resolve gadgetsweb redirect');
+  return resolvePromise.then(function (hubUrl) {
+    if (!hubUrl) {
+      console.log(PLUGIN_TAG + ' Redirect resolve failed for: ' + entryUrl.slice(0, 70));
       return [];
     }
-    console.log(PLUGIN_TAG + ' HubCloud URL: ' + hubCloudUrl.slice(0, 80));
+    console.log(PLUGIN_TAG + ' Resolved to: ' + hubUrl.slice(0, 80));
 
-    // Step 2: extractor API → direct stream URLs
-    return resolveViaExtractorApi(hubCloudUrl);
+    // If it's a HubDrive page, look for inner HubCloud link
+    if (hubUrl.toLowerCase().includes('hubdrive')) {
+      return fetchText(hubUrl).then(function (innerHtml) {
+        if (!innerHtml) return [];
+        var $ = cheerio.load(innerHtml);
+        var innerHubCloud = $('a[href*="hubcloud"]').first().attr('href');
+        if (innerHubCloud) {
+          console.log(PLUGIN_TAG + ' Inner HubCloud: ' + innerHubCloud.slice(0, 80));
+          return resolveViaExtractorApi(innerHubCloud);
+        }
+        return resolveViaExtractorApi(hubUrl);
+      });
+    }
+
+    // Step 2: Extractor API
+    return resolveViaExtractorApi(hubUrl);
   }).catch(function (err) {
-    console.log(PLUGIN_TAG + ' Card resolve error: ' + err.message);
+    console.log(PLUGIN_TAG + ' resolveCard error: ' + err.message);
     return [];
   });
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Site Search — find the correct movie/series page on 4khdhub.dad
+// Site Search
 // ─────────────────────────────────────────────────────────────────────────────
 
 /**
- * Search 4khdhub.dad for a title. The site has a search endpoint at /?s=query.
- * Cards are <a class="movie-card"> with .movie-card-title and .movie-card-meta.
+ * Search 4khdhub.dad for a title+year and return the best matching page URL.
+ * The new site has <a class="movie-card"> with .movie-card-title and .movie-card-meta.
  */
-function searchSite(title, year) {
-  var searchUrl = BASE_URL + '/?s=' + encodeURIComponent(title);
-  console.log(PLUGIN_TAG + ' Search → ' + searchUrl);
+function findPageUrl(title, year, isSeries) {
+  var cacheKey = '4khd_page_' + title + '_' + year;
+  var hit = pageCache.get(cacheKey);
+  if (hit) return Promise.resolve(hit);
 
-  return fetchText(searchUrl).then(function (html) {
-    if (!html) return null;
-    var $ = cheerio.load(html);
-    var results = [];
+  // Try with title+year first, then title only
+  function doSearch(query) {
+    var searchUrl = BASE_URL + '/?s=' + encodeURIComponent(query);
+    console.log(PLUGIN_TAG + ' Search → ' + searchUrl);
 
-    $('a.movie-card[href]').each(function (_, el) {
-      var href      = $(el).attr('href') || '';
-      var cardTitle = $(el).find('.movie-card-title').text().trim();
-      var cardMeta  = $(el).find('.movie-card-meta').text().trim();
-      var cardYear  = parseInt((cardMeta.match(/\d{4}/) || [])[0]) || 0;
+    return fetchText(searchUrl).then(function (html) {
+      if (!html) return null;
+      var $ = cheerio.load(html);
+      var candidates = [];
 
-      if (!href || !cardTitle) return;
+      $('a.movie-card[href]').each(function (_, el) {
+        var href      = $(el).attr('href') || '';
+        var cardTitle = $(el).find('.movie-card-title').text().trim();
+        var metaText  = $(el).find('.movie-card-meta').text().trim();
+        var cardYear  = parseInt((metaText.match(/\d{4}/) || [])[0]) || 0;
 
-      // Normalise to absolute URL
-      if (!href.startsWith('http')) href = BASE_URL + (href.startsWith('/') ? '' : '/') + href;
+        if (!href || !cardTitle) return;
+        if (!href.startsWith('http')) href = BASE_URL + (href.startsWith('/') ? '' : '/') + href;
 
-      results.push({
-        href      : href,
-        title     : cardTitle,
-        year      : cardYear,
-        distance  : levenshtein(cardTitle.toLowerCase(), title.toLowerCase()),
+        var dist = levenshtein(cardTitle.toLowerCase(), title.toLowerCase());
+        candidates.push({ href: href, title: cardTitle, year: cardYear, dist: dist });
       });
+
+      if (!candidates.length) return null;
+
+      // Sort: closest title first, then year proximity
+      candidates.sort(function (a, b) {
+        if (a.dist !== b.dist) return a.dist - b.dist;
+        return Math.abs(a.year - year) - Math.abs(b.year - year);
+      });
+
+      var best = candidates[0];
+      var maxDist = Math.min(5, Math.floor(title.length * 0.35));
+      if (best.dist > maxDist) {
+        console.log(PLUGIN_TAG + ' Best hit "' + best.title + '" dist=' + best.dist + ' > max=' + maxDist);
+        return null;
+      }
+
+      console.log(PLUGIN_TAG + ' Hit: "' + best.title + '" (' + best.year + ') dist=' + best.dist);
+      return best.href;
     });
+  }
 
-    if (!results.length) return null;
-
-    // Sort by title similarity then year proximity
-    results.sort(function (a, b) {
-      if (a.distance !== b.distance) return a.distance - b.distance;
-      return Math.abs(a.year - year) - Math.abs(b.year - year);
+  return doSearch(title + ' ' + year).then(function (url) {
+    if (url) { pageCache.set(cacheKey, url); return url; }
+    return doSearch(title).then(function (url2) {
+      if (url2) pageCache.set(cacheKey, url2);
+      return url2;
     });
-
-    // Accept if Levenshtein distance is reasonable
-    var best = results[0];
-    if (best.distance > Math.min(6, Math.floor(title.length * 0.4))) {
-      console.log(PLUGIN_TAG + ' Best search hit "' + best.title + '" too far (dist=' + best.distance + ')');
-      return null;
-    }
-
-    console.log(PLUGIN_TAG + ' Best hit: "' + best.title + '" (' + best.year + ') dist=' + best.distance);
-    return best.href;
   });
 }
 
@@ -602,15 +629,7 @@ function searchSite(title, year) {
 // Detail Page Scraper
 // ─────────────────────────────────────────────────────────────────────────────
 
-/**
- * Scrape a detail page and collect all .download-item cards.
- * For series, filter to the correct season/episode using the card heading text.
- */
 function scrapeDetailPage(pageUrl, isSeries, season, episode) {
-  var cacheKey = 'page_' + pageUrl + '_' + season + '_' + episode;
-  var cached   = pageCache.get(cacheKey);
-  if (cached) return Promise.resolve(cached);
-
   console.log(PLUGIN_TAG + ' Detail page → ' + pageUrl);
 
   return fetchText(pageUrl).then(function (html) {
@@ -619,33 +638,26 @@ function scrapeDetailPage(pageUrl, isSeries, season, episode) {
     var cards = [];
 
     if (isSeries && season != null && episode != null) {
-      // Series: find accordion items that mention the season/episode
-      // New site wraps episodes inside .episode-item with .episode-title
       var seasonStr  = 'S' + String(season).padStart(2, '0');
       var episodeStr = 'Episode-' + String(episode).padStart(2, '0');
 
       $('.episode-item').each(function (_, el) {
-        var epTitle = $('.episode-title', el).text();
-        if (epTitle.indexOf(seasonStr) === -1) return;
+        if ($('.episode-title', el).text().indexOf(seasonStr) === -1) return;
         $('.episode-download-item, .download-item', el).each(function (_, item) {
           if ($(item).text().indexOf(episodeStr) !== -1) cards.push(item);
         });
       });
 
-      // Fallback: download-items on the page if no episode structure
+      // Fallback: just grab all download-items
       if (!cards.length) {
         $('.download-item').each(function (_, el) { cards.push(el); });
       }
-
     } else {
-      // Movies: all .download-item cards
       $('.download-item').each(function (_, el) { cards.push(el); });
     }
 
-    console.log(PLUGIN_TAG + ' ' + cards.length + ' download card(s) on page');
-    var result = { $: $, cards: cards };
-    if (cards.length) pageCache.set(cacheKey, result);
-    return result;
+    console.log(PLUGIN_TAG + ' ' + cards.length + ' download card(s)');
+    return { $: $, cards: cards };
   });
 }
 
@@ -653,56 +665,39 @@ function scrapeDetailPage(pageUrl, isSeries, season, episode) {
 // Stream Builder
 // ─────────────────────────────────────────────────────────────────────────────
 
-/**
- * Build a fully-labelled Nuvio stream object.
- *
- * Stream name (picker):
- *   🎬 4KHDHub | 4K (2160p) · WEB-DL · DV HDR H265 · DDP5.1 Atmos · 17.07GB
- *
- * Stream title (detail):
- *   Peaky Blinders: The Immortal Man (2026)
- *   📺 4K (2160p) · WEB-DL · DV HDR H265
- *   🔊 Hindi + Tamil + Telugu + English
- *   🎵 DDP5.1 Atmos
- *   💾 17.07GB  [R2 CDN]
- *   by Sanchit · @S4NCHITT · Murph's Streams
- */
 function buildStream(streamUrl, info, tmdbTitle, tmdbYear, season, episode, isSeries, direct) {
-  var infoLabel = buildInfoLabel(info);
-  var langStr   = formatLanguages(info.languages);
-  var server    = serverLabel(streamUrl);
+  var quality  = info.quality || 'HD';
+  var langStr  = info.languages && info.languages.length ? info.languages.join(' + ') : null;
+  var server   = serverLabel(streamUrl);
 
-  // ── Name ───────────────────────────────────────────────────────────────────
-  var streamName = '🎬 4KHDHub | ' + infoLabel;
+  // ── Name (stream picker row) ───────────────────────────────────────────────
+  var nameParts = ['🎬 4KHDHub'];
+  nameParts.push(quality);
+  if (info.codec)  nameParts.push(info.codec);
+  if (info.source) nameParts.push(info.source);
+  if (info.size)   nameParts.push(info.size);
+  var streamName = nameParts.join(' | ');
 
-  // ── Title lines ────────────────────────────────────────────────────────────
+  // ── Title (detail subtitle lines) ─────────────────────────────────────────
   var lines = [];
 
   var titleLine = tmdbTitle;
-  if (tmdbYear)  titleLine += ' (' + tmdbYear + ')';
+  if (tmdbYear) titleLine += ' (' + tmdbYear + ')';
   if (isSeries && season != null && episode != null) {
-    titleLine += ' · S' + String(season).padStart(2, '0') + 'E' + String(episode).padStart(2, '0');
+    titleLine += ' · S' + String(season).padStart(2,'0') + 'E' + String(episode).padStart(2,'0');
   }
   lines.push(titleLine);
 
-  if (info.quality || info.source || info.codec) {
-    var techLine = '📺 ';
-    var techParts = [];
-    if (info.quality) techParts.push(info.quality);
-    if (info.source)  techParts.push(info.source);
-    if (info.codec)   techParts.push(info.codec);
-    lines.push(techLine + techParts.join(' · '));
-  }
+  var techParts = [];
+  if (info.quality) techParts.push(info.quality);
+  if (info.source)  techParts.push(info.source);
+  if (info.codec)   techParts.push(info.codec);
+  if (techParts.length) lines.push('📺 ' + techParts.join(' · '));
 
   if (langStr) lines.push('🔊 ' + langStr);
   if (info.audio) lines.push('🎵 ' + info.audio);
-
-  var storageLine = '';
-  if (info.size) storageLine += '💾 ' + info.size;
-  if (server)    storageLine += (storageLine ? '  ' : '') + '[' + server + ']';
-  if (storageLine) lines.push(storageLine);
-
-  if (info.filename) lines.push('📄 ' + info.filename.slice(0, 70) + (info.filename.length > 70 ? '…' : ''));
+  if (info.size || server) lines.push('💾 ' + (info.size || '') + (info.size && server ? '  ' : '') + (server ? '[' + server + ']' : ''));
+  if (info.filename) lines.push('📄 ' + info.filename.slice(0, 72) + (info.filename.length > 72 ? '…' : ''));
 
   lines.push("by Sanchit · @S4NCHITT · Murph's Streams");
 
@@ -710,7 +705,7 @@ function buildStream(streamUrl, info, tmdbTitle, tmdbYear, season, episode, isSe
     name    : streamName,
     title   : lines.join('\n'),
     url     : streamUrl,
-    quality : info.quality || 'HD',
+    quality : quality,
     direct  : !!direct,
     behaviorHints: {
       notWebReady : true,
@@ -718,10 +713,6 @@ function buildStream(streamUrl, info, tmdbTitle, tmdbYear, season, episode, isSe
     },
   };
 }
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Quality sort score
-// ─────────────────────────────────────────────────────────────────────────────
 
 function qualitySortScore(q) {
   if (!q) return 0;
@@ -734,110 +725,77 @@ function qualitySortScore(q) {
 // Public API — getStreams
 // ─────────────────────────────────────────────────────────────────────────────
 
-/**
- * Main entry point called by the Nuvio plugin runner.
- *
- * @param {string}        tmdbId   - TMDB content ID
- * @param {string}        type     - "movie" | "tv" | "series"
- * @param {number|string} season   - Season number  (TV only)
- * @param {number|string} episode  - Episode number (TV only)
- * @returns {Promise<Array>}         Array of Nuvio-compatible stream objects
- */
 function getStreams(tmdbId, type, season, episode) {
   var cacheKey = '4khd_' + tmdbId + '_' + type + '_' + season + '_' + episode;
-  var hit      = streamCache.get(cacheKey);
+  var hit = streamCache.get(cacheKey);
   if (hit) { console.log(PLUGIN_TAG + ' Cache HIT: ' + cacheKey); return Promise.resolve(hit); }
 
   var isSeries = (type === 'tv' || type === 'series');
   var s = season  ? parseInt(season)  : null;
   var e = episode ? parseInt(episode) : null;
 
-  console.log(PLUGIN_TAG + ' ► TMDB: ' + tmdbId + ' | ' + type + (s ? ' S' + s + 'E' + e : ''));
+  console.log(PLUGIN_TAG + ' ► ' + tmdbId + ' | ' + type + (s ? ' S' + s + 'E' + e : ''));
 
   return getTmdbDetails(tmdbId, type).then(function (details) {
     if (!details || !details.title) {
-      console.log(PLUGIN_TAG + ' TMDB lookup failed.');
-      return [];
+      console.log(PLUGIN_TAG + ' TMDB failed'); return [];
     }
 
     var title = details.title;
     var year  = details.year;
     console.log(PLUGIN_TAG + ' Title: "' + title + '" (' + year + ')');
 
-    // ── Find detail page ─────────────────────────────────────────────────────
-    return searchSite(title, year).then(function (pageUrl) {
-      if (!pageUrl) {
-        console.log(PLUGIN_TAG + ' No page found for: ' + title);
-        return [];
-      }
+    return findPageUrl(title, year, isSeries).then(function (pageUrl) {
+      if (!pageUrl) { console.log(PLUGIN_TAG + ' Page not found'); return []; }
       console.log(PLUGIN_TAG + ' Page → ' + pageUrl);
 
-      // ── Scrape download cards ─────────────────────────────────────────────
       return scrapeDetailPage(pageUrl, isSeries, s, e).then(function (result) {
         var $ = result.$;
         var cards = result.cards;
+        if (!cards.length) { console.log(PLUGIN_TAG + ' No cards found'); return []; }
 
-        if (!cards.length) {
-          console.log(PLUGIN_TAG + ' No download cards found.');
-          return [];
-        }
-
-        // ── Parse info from each card ─────────────────────────────────────
         var cardData = cards.slice(0, 8).map(function (card) {
           return { card: card, info: parseCardInfo($, card) };
         });
 
-        console.log(PLUGIN_TAG + ' Resolving ' + cardData.length + ' card(s) in parallel…');
+        console.log(PLUGIN_TAG + ' Resolving ' + cardData.length + ' card(s)…');
 
-        // ── Resolve all cards in parallel ─────────────────────────────────
         var resolvePromises = cardData.map(function (item) {
           return resolveCard($, item.card)
-            .then(function (streamLinks) {
-              return { info: item.info, streamLinks: streamLinks };
-            })
-            .catch(function (err) {
-              console.log(PLUGIN_TAG + ' Card error: ' + err.message);
-              return { info: item.info, streamLinks: [] };
-            });
+            .then(function (links) { return { info: item.info, links: links }; })
+            .catch(function () { return { info: item.info, links: [] }; });
         });
 
         return Promise.all(resolvePromises).then(function (resolved) {
           var streams = [];
+          var seen    = {};
 
           resolved.forEach(function (res) {
-            res.streamLinks.forEach(function (link) {
+            res.links.forEach(function (link) {
               if (!link.url || isGdrive(link.url)) return;
+              if (seen[link.url]) return;
+              seen[link.url] = true;
 
-              // Merge extractor-returned label/size into info
-              var mergedInfo = Object.assign({}, res.info);
-              if (link.label && !mergedInfo.quality) {
-                mergedInfo.quality = extractQuality(link.label);
+              // Merge extractor quality hint into info
+              var info = Object.assign({}, res.info);
+              if (link.label && extractQuality(link.label) !== 'HD') {
+                info.quality = extractQuality(link.label);
               }
-              if (link.size && !mergedInfo.size) {
-                mergedInfo.size = link.size;
-              }
+              if (link.size && !info.size) info.size = link.size;
 
               streams.push(buildStream(
-                link.url, mergedInfo,
+                link.url, info,
                 title, year, s, e, isSeries, link.direct
               ));
             });
           });
 
-          // Sort: 4K → 1080p → 720p → 480p
+          // Sort 4K → 1080p → 720p → 480p
           streams.sort(function (a, b) {
             return qualitySortScore(b.quality) - qualitySortScore(a.quality);
           });
 
-          // Deduplicate by URL
-          var seen = {};
-          streams = streams.filter(function (s) {
-            if (seen[s.url]) return false;
-            seen[s.url] = true;
-            return true;
-          });
-
-          console.log(PLUGIN_TAG + ' ✔ ' + streams.length + ' stream(s) ready (' + streams.filter(function(x){return x.direct;}).length + ' direct)');
+          console.log(PLUGIN_TAG + ' ✔ ' + streams.length + ' stream(s) (' + streams.filter(function(x){return x.direct;}).length + ' direct)');
           if (streams.length) streamCache.set(cacheKey, streams);
           return streams;
         });
