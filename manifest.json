@@ -146,6 +146,19 @@
       "contentLanguage": ["en"]
     },
     {
+      "id": "cinemacity",
+      "name": "CinemaCity",
+      "description": "Multi Language Provider",
+      "version": "1.0.0",
+      "author": "Nuvio Team",
+      "supportedTypes": ["movie", "tv"],
+      "filename": "providers/cinemacity.js",
+      "enabled": true,
+      "formats": ["mp4", "m3u8"],
+      "logo": "",
+      "contentLanguage": ["en", "hi", "ar"]
+    },
+    {
       "id": "dahmermovies",
       "name": "Dahmermovies",
       "description": "Auto-generated description for Dahmermovies",
