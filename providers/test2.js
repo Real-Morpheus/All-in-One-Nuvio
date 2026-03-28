@@ -192,7 +192,7 @@ var SEARCH_BASE = "https://www.fuegocine.com/feeds/posts/default?alt=json&max-re
 function getTmdbInfo(tmdbId, mediaType) {
   return __async(this, null, function* () {
     const type = mediaType === "movie" ? "movie" : "tv";
-    const data = yield get(`${TMDB_BASE}/${type}/${tmdbId}?api_key=${TMDB_KEY}&language=es-LA`);
+    const data = yield get(`${TMDB_BASE}/${type}/${tmdbId}?api_key=${TMDB_KEY}&language=en-LA`);
     const title = type === "movie" ? data.title || data.original_title : data.name || data.original_name;
     const year = (type === "movie" ? data.release_date || "" : data.first_air_date || "").slice(0, 4);
     return { title, year };
