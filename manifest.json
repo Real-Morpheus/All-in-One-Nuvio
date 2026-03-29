@@ -145,19 +145,6 @@
       "logo": "https://i.postimg.cc/wxD6rVKX/animeworld.png",
       "contentLanguage": ["hi", "en", "ja"]
     },
-    {
-      "id": "allmovieland",
-      "name": "AllMovieLand",
-      "description": "AllMovieLand streaming provider with multi-language support",
-      "version": "1.0.0",
-      "author": "Nuvio Team",
-      "supportedTypes": ["movie", "tv"],
-      "filename": "providers/allmovieland.js",
-      "enabled": true,
-      "formats": ["mp4", "m3u8"],
-      "logo": "",
-      "contentLanguage": ["en"]
-    },
     { 
       "id": "brazucaplay",
       "name": "BrazucaPlay",
@@ -261,6 +248,19 @@
       "formats": ["mp4", "m3u8"],
       "logo": "https://i.postimg.cc/mryRTf0R/hdhub4u.png",
       "contentLanguage": ["en"]
+    },   
+    {
+      "id": "lamovie",
+      "name": "LA.Movie",
+      "description": "Streams in Eng/Lat/Spa from LaMovie. Vimeos, GoodStream, StreamWish, VOE and Filemoon.",
+      "version": "1.0.0",
+      "author": "KennethJYS",
+      "supportedTypes": ["movie", "tv"],
+      "filename": "providers/lamovie.js",
+      "enabled": true,
+      "formats": ["mp4", "m3u8"],
+      "logo": "https://i.postimg.cc/SsgH2gcK/lamovie.png",
+      "contentLanguage": ["en", "es"]  
     },
     {
       "id": "moviesmod",
