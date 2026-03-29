@@ -6,6 +6,8 @@ console.log('[DahmerMovies] Initializing Dahmer Movies scraper');
 // Constants
 const TMDB_API_KEY = "8ab2887a5c9ac2a523356811180f5166";
 const DAHMER_MOVIES_API = 'https://a.111477.xyz';
+const PROXY_HOST = 'https://p.111477.xyz';
+const HEADERS_JSON_URL = 'https://raw.githubusercontent.com/Anshu78780/json/refs/heads/main/hs.json';
 const TIMEOUT = 60000; // 60 seconds
 
 // Quality mapping
@@ -20,6 +22,32 @@ const Qualities = {
     P1440: 1440,
     P2160: 2160
 };
+
+// Cache for remote headers/cookies
+let remoteHeadersCache = null;
+
+// Fetch headers/cookies from GitHub JSON
+function fetchRemoteHeaders() {
+    if (remoteHeadersCache) {
+        return Promise.resolve(remoteHeadersCache);
+    }
+
+    console.log('[DahmerMovies] Fetching remote headers from GitHub...');
+    return fetch(HEADERS_JSON_URL, { timeout: TIMEOUT })
+        .then(res => {
+            if (!res.ok) throw new Error(`Failed to fetch headers JSON: ${res.status}`);
+            return res.json();
+        })
+        .then(data => {
+            remoteHeadersCache = data;
+            console.log('[DahmerMovies] Remote headers loaded successfully');
+            return data;
+        })
+        .catch(err => {
+            console.log(`[DahmerMovies] Could not fetch remote headers: ${err.message}`);
+            return null;
+        });
+}
 
 // Helper function to make HTTP requests
 function makeRequest(url, options = {}) {
@@ -36,10 +64,93 @@ function makeRequest(url, options = {}) {
     };
 
     return fetch(url, requestOptions).then(function(response) {
-        if (!response.ok) {
+        if (!response.ok && response.status !== 302) {
             throw new Error(`HTTP ${response.status}: ${response.statusText}`);
         }
         return response;
+    });
+}
+
+// Resolve a direct file URL through p.111477.xyz/bulk to get the final stream URL
+// Sends exact headers/cookies as seen in browser network tab
+function resolveStreamUrl(fileUrl, remoteHeaders) {
+    console.log(`[DahmerMovies] Resolving stream URL via proxy for: ${fileUrl}`);
+
+    // Build cookie string: start from remote JSON, override cf_clearance if present
+    let cookieString = '';
+    if (remoteHeaders && remoteHeaders.cookies) {
+        // Parse existing cookies
+        const cookieMap = {};
+        remoteHeaders.cookies.split(';').forEach(part => {
+            const idx = part.indexOf('=');
+            if (idx !== -1) {
+                const key = part.substring(0, idx).trim();
+                const val = part.substring(idx + 1).trim();
+                cookieMap[key] = val;
+            }
+        });
+
+        // If there's a newer cf_clearance in remoteHeaders (top-level), override
+        if (remoteHeaders.cf_clearance) {
+            cookieMap['cf_clearance'] = remoteHeaders.cf_clearance;
+        }
+
+        cookieString = Object.entries(cookieMap)
+            .map(([k, v]) => `${k}=${v}`)
+            .join('; ');
+    }
+
+    // Construct the proxy bulk URL
+    // Scheme: GET https://p.111477.xyz/bulk
+    // with 'u' query param = original file URL on a.111477.xyz
+    const proxyUrl = `${PROXY_HOST}/bulk?u=${encodeURIComponent(fileUrl)}`;
+
+    const requestHeaders = {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:148.0) Gecko/20100101 Firefox/148.0',
+        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+        'Accept-Encoding': 'gzip, deflate, br, zstd',
+        'Accept-Language': 'en-US,en;q=0.9',
+        'Cache-Control': 'no-cache',
+        'Connection': 'keep-alive',
+        'Pragma': 'no-cache',
+        'Referer': 'https://a.111477.xyz/',
+        'Sec-Fetch-Dest': 'document',
+        'Sec-Fetch-Mode': 'navigate',
+        'Sec-Fetch-Site': 'same-site',
+        'Sec-Fetch-User': '?1',
+        'Upgrade-Insecure-Requests': '1',
+        'Priority': 'u=0, i',
+        ...(cookieString ? { 'Cookie': cookieString } : {})
+    };
+
+    console.log(`[DahmerMovies] Proxy request URL: ${proxyUrl}`);
+
+    return fetch(proxyUrl, {
+        method: 'GET',
+        headers: requestHeaders,
+        redirect: 'manual', // Do NOT follow redirect — we want the Location header
+        timeout: TIMEOUT
+    }).then(response => {
+        console.log(`[DahmerMovies] Proxy response status: ${response.status}`);
+
+        // Extract Location header from the 302 redirect
+        const location = response.headers.get('location') || response.headers.get('Location');
+        if (location) {
+            console.log(`[DahmerMovies] Resolved stream URL: ${location}`);
+            return location;
+        }
+
+        // If no location header, try to return the response URL (some fetch implementations follow and expose it)
+        if (response.url && response.url !== proxyUrl) {
+            console.log(`[DahmerMovies] Using response.url as stream URL: ${response.url}`);
+            return response.url;
+        }
+
+        console.log('[DahmerMovies] No redirect location found, falling back to original URL');
+        return fileUrl;
+    }).catch(err => {
+        console.log(`[DahmerMovies] Proxy resolution failed: ${err.message}, using original URL`);
+        return fileUrl;
     });
 }
 
@@ -63,24 +174,19 @@ function getIndexQuality(str) {
 function getQualityWithCodecs(str) {
     if (!str) return 'Unknown';
     
-    // Extract base quality (resolution)
     const qualityMatch = str.match(/(\d{3,4})[pP]/);
     const baseQuality = qualityMatch ? `${qualityMatch[1]}p` : 'Unknown';
     
-    // Extract codec information (excluding HEVC and bit depth)
     const codecs = [];
     const lowerStr = str.toLowerCase();
     
-    // HDR formats
     if (lowerStr.includes('dv') || lowerStr.includes('dolby vision')) codecs.push('DV');
     if (lowerStr.includes('hdr10+')) codecs.push('HDR10+');
     else if (lowerStr.includes('hdr10') || lowerStr.includes('hdr')) codecs.push('HDR');
     
-    // Special formats
     if (lowerStr.includes('remux')) codecs.push('REMUX');
     if (lowerStr.includes('imax')) codecs.push('IMAX');
     
-    // Combine quality with codecs using pipeline separator
     if (codecs.length > 0) {
         return `${baseQuality} | ${codecs.join(' | ')}`;
     }
@@ -120,12 +226,10 @@ function decode(input) {
 function formatFileSize(sizeText) {
     if (!sizeText) return null;
     
-    // If it's already formatted (contains GB, MB, etc.), return as is
     if (/\d+(\.\d+)?\s*(GB|MB|KB|TB)/i.test(sizeText)) {
         return sizeText;
     }
     
-    // If it's a number (bytes), convert to human readable
     const bytes = parseInt(sizeText);
     if (isNaN(bytes)) return sizeText;
     
@@ -142,33 +246,27 @@ function formatFileSize(sizeText) {
 function parseLinks(html) {
     const links = [];
 
-    // Parse table rows to get both links and file sizes
     const rowRegex = /<tr[^>]*>(.*?)<\/tr>/gis;
     let rowMatch;
 
     while ((rowMatch = rowRegex.exec(html)) !== null) {
         const rowContent = rowMatch[1];
 
-        // Extract link from the row
         const linkMatch = rowContent.match(/<a[^>]*href=["']([^"']*)["'][^>]*>([^<]*)<\/a>/i);
         if (!linkMatch) continue;
 
         const href = linkMatch[1];
         const text = linkMatch[2].trim();
 
-        // Skip parent directory and empty links
         if (!text || href === '../' || text === '../') continue;
 
-        // Extract file size from the same row - try multiple patterns
         let size = null;
 
-        // Pattern 1: DahmerMovies specific - data-sort attribute with byte size
         const sizeMatch1 = rowContent.match(/<td[^>]*data-sort=["']?(\d+)["']?[^>]*>(\d+)<\/td>/i);
         if (sizeMatch1) {
-            size = sizeMatch1[2]; // Use the displayed number (already in bytes)
+            size = sizeMatch1[2];
         }
 
-        // Pattern 2: Standard Apache directory listing with filesize class
         if (!size) {
             const sizeMatch2 = rowContent.match(/<td[^>]*class=["']filesize["'][^>]*[^>]*>([^<]+)<\/td>/i);
             if (sizeMatch2) {
@@ -176,7 +274,6 @@ function parseLinks(html) {
             }
         }
 
-        // Pattern 3: Look for size in any td element after the link (formatted sizes)
         if (!size) {
             const sizeMatch3 = rowContent.match(/<\/a><\/td>\s*<td[^>]*>([^<]+(?:GB|MB|KB|B|\d+\s*(?:GB|MB|KB|B)))<\/td>/i);
             if (sizeMatch3) {
@@ -184,7 +281,6 @@ function parseLinks(html) {
             }
         }
 
-        // Pattern 4: Look for size anywhere in the row (more permissive)
         if (!size) {
             const sizeMatch4 = rowContent.match(/(\d+(?:\.\d+)?\s*(?:GB|MB|KB|B|bytes?))/i);
             if (sizeMatch4) {
@@ -195,7 +291,6 @@ function parseLinks(html) {
         links.push({ text, href, size });
     }
     
-    // Fallback to simple link parsing if table parsing fails
     if (links.length === 0) {
         const linkRegex = /<a[^>]*href=["']([^"']*)["'][^>]*>([^<]*)<\/a>/gi;
         let match;
@@ -216,32 +311,29 @@ function parseLinks(html) {
 function invokeDahmerMovies(title, year, season = null, episode = null) {
     console.log(`[DahmerMovies] Searching for: ${title} (${year})${season ? ` Season ${season}` : ''}${episode ? ` Episode ${episode}` : ''}`);
     
-    // Construct URL based on content type (with proper encoding)
     const encodedUrl = season === null 
         ? `${DAHMER_MOVIES_API}/movies/${encodeURIComponent(title.replace(/:/g, '') + ' (' + year + ')')}/`
         : `${DAHMER_MOVIES_API}/tvs/${encodeURIComponent(title.replace(/:/g, ' -'))}/Season ${season}/`;
     
     console.log(`[DahmerMovies] Fetching from: ${encodedUrl}`);
-    
-    return makeRequest(encodedUrl).then(function(response) {
-        return response.text();
-    }).then(function(html) {
+
+    // Fetch remote headers and directory listing in parallel
+    return Promise.all([
+        fetchRemoteHeaders(),
+        makeRequest(encodedUrl).then(r => r.text())
+    ]).then(function([remoteHeaders, html]) {
         console.log(`[DahmerMovies] Response length: ${html.length}`);
         
-        // Parse HTML to extract links
         const paths = parseLinks(html);
         console.log(`[DahmerMovies] Found ${paths.length} total links`);
         
-        // Filter based on content type
         let filteredPaths;
         if (season === null) {
-            // For movies, filter by quality (1080p or 2160p)
             filteredPaths = paths.filter(path => 
                 /(1080p|2160p)/i.test(path.text)
             );
             console.log(`[DahmerMovies] Filtered to ${filteredPaths.length} movie links (1080p/2160p only)`);
         } else {
-            // For TV shows, filter by season and episode
             const [seasonSlug, episodeSlug] = getEpisodeSlug(season, episode);
             const episodePattern = new RegExp(`S${seasonSlug}E${episodeSlug}`, 'i');
             filteredPaths = paths.filter(path => 
@@ -255,46 +347,57 @@ function invokeDahmerMovies(title, year, season = null, episode = null) {
             return [];
         }
         
-        // Process and return results
-        const results = filteredPaths.map(path => {
+        // Build direct file URLs first
+        const rawResults = filteredPaths.map(path => {
             const quality = getIndexQuality(path.text);
             const qualityWithCodecs = getQualityWithCodecs(path.text);
             const tags = getIndexQualityTags(path.text);
             
-            // Construct proper URL - handle relative paths correctly
-            let fullUrl;
+            let directUrl;
             if (path.href.startsWith('http')) {
-                // Already a full URL - need to encode it properly
                 try {
-                    // Parse the URL and let the URL constructor handle encoding
                     const url = new URL(path.href);
-                    // Reconstruct the URL with properly encoded pathname
-                    fullUrl = `${url.protocol}//${url.host}${url.pathname}`;
+                    directUrl = `${url.protocol}//${url.host}${url.pathname}`;
                 } catch (error) {
-                    // Fallback: manually encode if URL parsing fails
-                    console.log(`[DahmerMovies] URL parsing failed, manually encoding: ${path.href}`);
-                    fullUrl = path.href.replace(/ /g, '%20');
+                    directUrl = path.href.replace(/ /g, '%20');
                 }
             } else {
-                // Relative path - combine with encoded base URL
                 const baseUrl = encodedUrl.endsWith('/') ? encodedUrl : encodedUrl + '/';
                 const relativePath = path.href.startsWith('/') ? path.href.substring(1) : path.href;
                 const encodedFilename = encodeURIComponent(relativePath);
-                fullUrl = baseUrl + encodedFilename;
+                directUrl = baseUrl + encodedFilename;
             }
             
             return {
                 name: "DahmerMovies",
                 title: `DahmerMovies ${tags || path.text}`,
-                url: fullUrl,
-                quality: qualityWithCodecs, // Use enhanced quality with codecs
-                size: formatFileSize(path.size), // Format file size
-                headers: {}, // No special headers needed for direct downloads
-                provider: "dahmermovies", // Provider identifier
+                directUrl,
+                quality: qualityWithCodecs,
+                size: formatFileSize(path.size),
+                headers: {},
+                provider: "dahmermovies",
                 filename: path.text
             };
         });
+
+        // Resolve all stream URLs through the proxy (p.111477.xyz/bulk)
+        // Extract Location header from the 302 response as the final stream URL
+        return Promise.all(
+            rawResults.map(item =>
+                resolveStreamUrl(item.directUrl, remoteHeaders).then(finalUrl => ({
+                    name: item.name,
+                    title: item.title,
+                    url: finalUrl,       // Final resolved CDN stream URL
+                    quality: item.quality,
+                    size: item.size,
+                    headers: item.headers,
+                    provider: item.provider,
+                    filename: item.filename
+                }))
+            )
+        );
         
+    }).then(function(results) {
         // Sort by quality (highest first)
         results.sort((a, b) => {
             const qualityA = getIndexQuality(a.filename);
@@ -319,7 +422,6 @@ function invokeDahmerMovies(title, year, season = null, episode = null) {
 function getStreams(tmdbId, mediaType = 'movie', seasonNum = null, episodeNum = null) {
     console.log(`[DahmerMovies] Fetching streams for TMDB ID: ${tmdbId}, Type: ${mediaType}${seasonNum ? `, S${seasonNum}E${episodeNum}` : ''}`);
 
-    // Get TMDB info
     const tmdbUrl = `https://api.themoviedb.org/3/${mediaType === 'tv' ? 'tv' : 'movie'}/${tmdbId}?api_key=${TMDB_API_KEY}`;
     return makeRequest(tmdbUrl).then(function(tmdbResponse) {
         return tmdbResponse.json();
@@ -333,7 +435,6 @@ function getStreams(tmdbId, mediaType = 'movie', seasonNum = null, episodeNum = 
 
         console.log(`[DahmerMovies] TMDB Info: "${title}" (${year})`);
 
-        // Call the main scraper function
         return invokeDahmerMovies(
             title,
             year ? parseInt(year) : null,
@@ -351,6 +452,5 @@ function getStreams(tmdbId, mediaType = 'movie', seasonNum = null, episodeNum = 
 if (typeof module !== 'undefined' && module.exports) {
     module.exports = { getStreams };
 } else {
-    // For React Native environment
     global.getStreams = getStreams;
 }
