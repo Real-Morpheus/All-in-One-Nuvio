@@ -4,16 +4,16 @@
 const cheerio = require('cheerio-without-node-native');
 
 const HIANIME_APIS = [
-    "https://hianime.io",
+    "https://hianime.ws",
     "https://hianime.dk",
-    "https://hianime.nz",
+    "https://hianime.io",
     "https://hianime.ro",
     "https://hianime.lc"
 ];
 
 const AJAX_HEADERS = {
     'X-Requested-With': 'XMLHttpRequest',
-    'Referer': 'https://hianime.io/',
+    'Referer': 'https://hianime.ws/home',
     'User-Agent': 'Mozilla/5.0'
 };
 
