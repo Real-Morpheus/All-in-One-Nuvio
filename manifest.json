@@ -3,19 +3,6 @@
   "version": "1.0.0",
   "scrapers": [
     {
-      "id": "moviesdrive",
-      "name": "MoviesDrive",
-      "description": "MoviesDrive - Movies and TV shows with multiple streaming servers",
-      "version": "2.0.0",
-      "author": "JK",
-      "supportedTypes": ["movie", "tv"],
-      "filename": "src/providers/moviesdrive.js",
-      "enabled": true,
-      "formats": ["mp4", "mkv", "m3u8"],
-      "logo": "https://i.postimg.cc/bwDbhq9q/moviesdrive.png",
-      "contentLanguage": ["en", "hi"]
-    },
-    {
       "id": "hianime",
       "name": "HiAnime",
       "description": "HiAnime - Anime and Asian content streaming",
@@ -274,6 +261,19 @@
       "formats": ["mp4", "m3u8"],
       "logo": "https://github.com/NivinCNC/CNCVerse-Cloud-Stream-Extension/raw/refs/heads/master/MovieBoxProvider/icon.png",
       "contentLanguage": ["en", "hi", "ta", "te"]  
+    },
+    {
+      "id": "moviesdrive",
+      "name": "MoviesDrive",
+      "description": "MoviesDrive - Movies and TV shows with multiple streaming servers",
+      "version": "2.0.0",
+      "author": "JK",
+      "supportedTypes": ["movie", "tv"],
+      "filename": "src/providers/moviesdrive.js",
+      "enabled": true,
+      "formats": ["mp4", "mkv", "m3u8"],
+      "logo": "https://i.postimg.cc/bwDbhq9q/moviesdrive.png",
+      "contentLanguage": ["en", "hi"]
     },
     {
       "id": "moviesmod",
