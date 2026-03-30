@@ -1,210 +1,188 @@
-// ============================================================
-// Einthusan Provider for Nuvio
-// Author: Nik
-// Version: 1.0.0
-// Supports: Hindi, Tamil, Telugu, Malayalam, Kannada,
-//           Bengali, Marathi, Punjabi movies
-// Note: Works with TMDB title search → Einthusan match
-// ============================================================
+const https = require("https");
 
-var BASE_URL = 'https://einthusan.tv';
+// Force IPv4
+const agent = new https.Agent({ family: 4 });
 
+// OPTIONAL proxy (leave null if not using)
+const PROXY = null;
+// To use proxy:
+// const { HttpsProxyAgent } = require("https-proxy-agent");
+// const PROXY = new HttpsProxyAgent("http://user:pass@host:port");
+
+// Improved headers
 var HEADERS = {
-  'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-  'Origin': 'https://einthusan.tv',
-  'Referer': 'https://einthusan.tv/'
+  "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120.0.0.0 Safari/537.36",
+  "Accept": "*/*",
+  "Accept-Language": "en-GB,en-US;q=0.9,en;q=0.8",
+  "Origin": "https://allmovieland.io",
+  "Referer": "https://allmovieland.io/",
+  "Connection": "keep-alive",
+  "sec-ch-ua": '"Chromium";v="120", "Google Chrome";v="120", "Not:A-Brand";v="99"',
+  "sec-ch-ua-mobile": "?0",
+  "sec-ch-ua-platform": '"Windows"',
+  "Sec-Fetch-Dest": "empty",
+  "Sec-Fetch-Mode": "cors",
+  "Sec-Fetch-Site": "same-origin"
 };
 
-// Language map — Einthusan uses lang slug in URL
-var LANG_SLUGS = ['hindi', 'tamil', 'telugu', 'malayalam', 'kannada', 'bengali', 'marathi', 'punjabi'];
+// Safe fetch wrapper
+async function safeFetch(url, options = {}) {
+  await new Promise(r => setTimeout(r, 400));
 
-// ── Utility: simple HTML tag stripper ──────────────────────
-function stripTags(html) {
-  return html.replace(/<[^>]*>/g, '').trim();
+  const finalOptions = {
+    ...options,
+    headers: {
+      ...HEADERS,
+      ...(options.headers || {})
+    },
+    agent: PROXY || agent
+  };
+
+  const res = await fetch(url, finalOptions);
+
+  if (!res.ok) {
+    console.log("[Fetch Blocked]", url, res.status);
+  }
+
+  return res;
 }
 
-// ── Utility: extract value between two strings ─────────────
-function extractBetween(str, start, end) {
-  var si = str.indexOf(start);
-  if (si === -1) return null;
-  si += start.length;
-  var ei = str.indexOf(end, si);
-  if (ei === -1) return null;
-  return str.substring(si, ei).trim();
-}
+// ===== ORIGINAL CODE BELOW (UNCHANGED LOGIC) =====
 
-// ── Step 1: Search Einthusan for a movie title ─────────────
-function searchEinthusan(title, lang) {
-  return new Promise(function (resolve) {
-    var searchUrl = BASE_URL + '/movie/results/?lang=' + lang + '&find=Search&title=' + encodeURIComponent(title);
+const cheerio = require("cheerio-without-node-native");
 
-    fetch(searchUrl, { headers: HEADERS })
-      .then(function (res) { return res.text(); })
-      .then(function (html) {
-        // Extract first result movie ID
-        // Pattern: href="/movie/watch/12345/?lang=hindi"
-        var pattern = /href="\/movie\/watch\/(\d+)\/\?lang=([^"]+)"/;
-        var match = html.match(pattern);
+const TMDB_API_KEY = "439c478a771f35c05022f9feabcca01c";
+const TMDB_BASE_URL = "https://api.themoviedb.org/3";
+const MAIN_URL = "https://allmovieland.io";
 
-        if (!match) {
-          resolve(null);
-          return;
-        }
+async function getTMDBDetails(tmdbId, mediaType) {
+  const endpoint = mediaType === "tv" ? "tv" : "movie";
+  const url = `${TMDB_BASE_URL}/${endpoint}/${tmdbId}?api_key=${TMDB_API_KEY}&append_to_response=external_ids`;
 
-        var movieId = match[1];
-        var movieLang = match[2];
-
-        // Also try to grab the movie title from result to verify match
-        var titlePattern = /<h3[^>]*>([\s\S]*?)<\/h3>/;
-        var titleMatch = html.match(titlePattern);
-        var foundTitle = titleMatch ? stripTags(titleMatch[1]) : '';
-
-        resolve({
-          id: movieId,
-          lang: movieLang,
-          title: foundTitle
-        });
-      })
-      .catch(function () { resolve(null); });
+  const response = await safeFetch(url, {
+    method: "GET",
+    headers: { "Accept": "application/json" }
   });
+
+  const data = await response.json();
+
+  const title = mediaType === "tv" ? data.name : data.title;
+  const releaseDate = mediaType === "tv" ? data.first_air_date : data.release_date;
+  const year = releaseDate ? parseInt(releaseDate.split("-")[0]) : null;
+
+  return { title, year, imdbId: data.external_ids?.imdb_id || null, data };
 }
 
-// ── Step 2: Get stream URL from movie watch page ───────────
-function getStreamFromMoviePage(movieId, lang) {
-  return new Promise(function (resolve) {
-    var watchUrl = BASE_URL + '/movie/watch/' + movieId + '/?lang=' + lang;
-    var ajaxUrl = BASE_URL + '/ajax/movie/watch/' + movieId + '/';
+function normalizeTitle(title) {
+  return title.toLowerCase()
+    .replace(/\b(the|a|an)\b/g, "")
+    .replace(/[:\-_]/g, " ")
+    .replace(/\s+/g, " ")
+    .replace(/[^\w\s]/g, "")
+    .trim();
+}
 
-    var pageHeaders = Object.assign({}, HEADERS, {
-      'Referer': BASE_URL + '/movie/browse/?lang=' + lang
+function calculateTitleSimilarity(a, b) {
+  const w1 = normalizeTitle(a).split(" ");
+  const w2 = normalizeTitle(b).split(" ");
+  const set2 = new Set(w2);
+  const intersection = w1.filter(w => set2.has(w));
+  return intersection.length / new Set([...w1, ...w2]).size;
+}
+
+function findBestTitleMatch(mediaInfo, results) {
+  let best = null, score = 0;
+
+  for (const r of results) {
+    let s = calculateTitleSimilarity(mediaInfo.title, r.title);
+    if (mediaInfo.year && r.year) {
+      const diff = Math.abs(mediaInfo.year - r.year);
+      if (diff === 0) s += 0.2;
+    }
+    if (s > score && s > 0.3) {
+      score = s;
+      best = r;
+    }
+  }
+  return best;
+}
+
+async function getStreams(tmdbId, mediaType = "movie", season = null, episode = null) {
+  try {
+    const mediaInfo = await getTMDBDetails(tmdbId, mediaType);
+
+    const searchUrl = `${MAIN_URL}/index.php?story=${encodeURIComponent(mediaInfo.title)}&do=search&subaction=search`;
+    const res = await safeFetch(searchUrl);
+    const html = await res.text();
+
+    const $ = cheerio.load(html);
+    const results = [];
+
+    $("article.short-mid").each((i, el) => {
+      const title = $(el).find("h3").text();
+      const href = $(el).find("a").attr("href");
+      const year = (title.match(/\d{4}/) || [])[0];
+      results.push({ title, href, year: parseInt(year) });
     });
 
-    fetch(watchUrl, { headers: pageHeaders })
-      .then(function (res) { return res.text(); })
-      .then(function (html) {
+    const best = findBestTitleMatch(mediaInfo, results);
+    if (!best) return [];
 
-        // Method 1: Look for direct MP4 link
-        var mp4Match = html.match(/file\s*:\s*["'](https?:\/\/[^"']+\.mp4[^"']*)/i);
-        if (mp4Match) {
-          resolve([{
-            url: mp4Match[1],
-            quality: 'HD',
-            format: 'mp4'
-          }]);
-          return;
-        }
+    const doc = await (await safeFetch(best.href)).text();
+    const $$ = cheerio.load(doc);
 
-        // Method 2: Look for M3U8 / HLS stream
-        var m3u8Match = html.match(/["'](https?:\/\/[^"']+\.m3u8[^"']*)/i);
-        if (m3u8Match) {
-          resolve([{
-            url: m3u8Match[1],
-            quality: 'HD',
-            format: 'm3u8'
-          }]);
-          return;
-        }
+    const script = $$("div.tabs__content script").html() || "";
 
-        // Method 3: Extract CSRF token + ejpingdom data and hit AJAX
-        var csrfMatch = html.match(/gorilla\.csrf\.Token['":\s]+(['"]+)([^'"]+)/);
-        var csrf = csrfMatch ? csrfMatch[2] : '';
+    const domain = (script.match(/AwsIndStreamDomain\s*=\s*'([^']+)/) || [])[1];
+    const id = (script.match(/src:\s*'([^']+)/) || [])[1];
 
-        var ejMatch = html.match(/data-ejpingdom['":\s]+(['"]+)([^'"]+)/);
-        var ejData = ejMatch ? ejMatch[2] : '';
+    if (!domain || !id) return [];
 
-        if (csrf && ejData) {
-          var ajaxHeaders = Object.assign({}, HEADERS, {
-            'Referer': watchUrl,
-            'X-Requested-With': 'XMLHttpRequest',
-            'Content-Type': 'application/x-www-form-urlencoded'
-          });
+    const embed = await (await safeFetch(`${domain}/play/${id}`, {
+      headers: { Referer: best.href }
+    })).text();
 
-          var postBody = 'xEvent=UIVideoPlayer.PingOutcome&xJson=' +
-            encodeURIComponent(ejData) +
-            '&arcVersion=3&appVersion=59&gorilla.csrf.Token=' +
-            encodeURIComponent(csrf);
+    const $$$ = cheerio.load(embed);
+    const lastScript = $$$("body script").last().html() || "";
 
-          fetch(ajaxUrl, {
-            method: 'POST',
-            headers: ajaxHeaders,
-            body: postBody
-          })
-            .then(function (r) { return r.text(); })
-            .then(function (ajaxHtml) {
-              var streamMatch = ajaxHtml.match(/["'](https?:\/\/[^"']+\.(mp4|m3u8)[^"']*)/i);
-              if (streamMatch) {
-                resolve([{
-                  url: streamMatch[1],
-                  quality: 'HD',
-                  format: streamMatch[2]
-                }]);
-              } else {
-                resolve([]);
-              }
-            })
-            .catch(function () { resolve([]); });
-        } else {
-          resolve([]);
-        }
-      })
-      .catch(function () { resolve([]); });
-  });
-}
+    const jsonMatch = lastScript.match(/let\s+p3\s*=\s*(\{.*\});/);
+    if (!jsonMatch) return [];
 
-// ── Step 3: Lookup TMDB title using TMDB ID ────────────────
-function getTmdbTitle(tmdbId, mediaType) {
-  return new Promise(function (resolve) {
-    // Nuvio passes tmdbId — we use TMDB's public endpoint (no key needed for basic info)
-    var tmdbUrl = 'https://api.themoviedb.org/3/' + mediaType + '/' + tmdbId + '?language=en-US&api_key=4ef0d7355d9ffb5151e987764708ce96';
+    const json = JSON.parse(jsonMatch[1]);
 
-    fetch(tmdbUrl)
-      .then(function (res) { return res.json(); })
-      .then(function (data) {
-        var title = data.title || data.name || null;
-        resolve(title);
-      })
-      .catch(function () { resolve(null); });
-  });
-}
+    const fileRes = await safeFetch(json.file, {
+      method: "POST",
+      headers: { "X-CSRF-TOKEN": json.key }
+    });
 
-// ── Main exported function ─────────────────────────────────
-function getStreams(tmdbId, mediaType, seasonNum, episodeNum) {
-  return new Promise(function (resolve) {
+    const data = JSON.parse((await fileRes.text()).replace(/,\]/g, "]"));
 
-    // Einthusan only has movies (not TV series usually)
-    // We'll still try for both but focus on movies
-    getTmdbTitle(tmdbId, mediaType)
-      .then(function (title) {
-        if (!title) {
-          resolve([]);
-          return;
-        }
+    const streams = [];
 
-        // Try searching across key Indian languages
-        var searchPromises = LANG_SLUGS.map(function (lang) {
-          return searchEinthusan(title, lang);
-        });
+    for (const f of data) {
+      if (!f.file) continue;
 
-        Promise.all(searchPromises)
-          .then(function (results) {
-            // Filter out nulls and get first valid result
-            var validResults = results.filter(function (r) { return r !== null; });
-
-            if (validResults.length === 0) {
-              resolve([]);
-              return;
-            }
-
-            // Get streams from first valid match
-            var best = validResults[0];
-            return getStreamFromMoviePage(best.id, best.lang);
-          })
-          .then(function (streams) {
-            resolve(streams || []);
-          })
-          .catch(function () { resolve([]); });
+      const res = await safeFetch(`${domain}/playlist/${f.file}.txt`, {
+        method: "POST",
+        headers: { "X-CSRF-TOKEN": json.key }
       });
-  });
+
+      const url = (await res.text()).trim();
+
+      if (url.startsWith("http")) {
+        streams.push({
+          name: "AllMovieLand",
+          url
+        });
+      }
+    }
+
+    return streams;
+
+  } catch (e) {
+    console.log("ERROR:", e.message);
+    return [];
+  }
 }
 
-module.exports = { getStreams: getStreams };
+module.exports = { getStreams };
