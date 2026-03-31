@@ -122,7 +122,7 @@ function resolveFinalUrl(startUrl) {
     const referer = 'https://a.111477.xyz/';
     const userAgent = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36';
 
-    function attemptResolve(url, count, retryCount = 3) {
+    function attemptResolve(url, count, retryCount = 0) {
         if (count >= maxRedirects) {
             return Promise.resolve(url.includes('111477.xyz') ? null : url);
         }
