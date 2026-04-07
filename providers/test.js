@@ -160,4 +160,4 @@ async function getStreams(id, type) {
   }
 }
 
-module.exports = { getMeta, getStreams };
+module.exports = { getStreams, getStreams };
