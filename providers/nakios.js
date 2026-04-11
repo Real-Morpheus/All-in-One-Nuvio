@@ -144,7 +144,7 @@ function normalizeSources(sources) {
     }
 
     var lang    = source.lang    || 'MULTI';
-    var quality = source.quality || 'HD';
+    var quality = source.quality || '4K';
     var isM3U8  = url.indexOf('.m3u8') !== -1 || source.isM3U8 === true;
 
     results.push({
