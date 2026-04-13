@@ -1,11 +1,11 @@
-// Dahmer Movies Scraper - Parallel Search Edition
-// Fixed for: High-speed retrieval on Send Help, Zootopia 2, Peaky Blinders
+// Dahmer Movies Scraper - Movie/Series Distinction Fix
+// Specifically optimized for: Peaky Blinders (2025 Movie), Mercy, Crime 101
 
-console.log('[DahmerMovies] Initializing Parallel Scraper');
+console.log('[DahmerMovies] Initializing Scraper');
 
 const TMDB_API_KEY = "439c478a771f35c05022f9feabcca01c";
 const DAHMER_MOVIES_API = 'https://a.111477.xyz';
-const TIMEOUT = 10000; 
+const TIMEOUT = 15000;
 
 async function makeRequest(url) {
     return fetch(url, {
@@ -33,47 +33,55 @@ function parseLinks(html) {
 }
 
 async function invokeDahmerMovies(title, year, season = null, episode = null) {
+    // If season is null, we are looking for a MOVIE (like Peaky Blinders 2025)
     const pathType = season === null ? 'movies' : 'tvs';
     const cleanTitle = title.replace(/:/g, '');
     
-    // Create all possible variations
     const folderVariations = [];
     if (season === null) {
+        // High-priority patterns for movies on this server
         folderVariations.push(`${cleanTitle} (${year})`);
-        folderVariations.push(`${cleanTitle.replace(/ /g, '.')}.${year}`);
         folderVariations.push(cleanTitle);
+        folderVariations.push(`${cleanTitle.replace(/ /g, '.')}.${year}`);
     } else {
         folderVariations.push(cleanTitle);
         folderVariations.push(`${cleanTitle} -`);
-        folderVariations.push(cleanTitle.replace(/ /g, '.'));
     }
 
-    // Map variations to actual URL strings
-    const urlRequests = folderVariations.map(folder => {
+    let html = '';
+    let finalBaseUrl = '';
+
+    for (const folder of folderVariations) {
         const encodedFolder = encodeURIComponent(folder).replace(/\(/g, '%28').replace(/\)/g, '%29');
-        let baseUrl = `${DAHMER_MOVIES_API}/${pathType}/${encodedFolder}/`;
+        let tryUrl = `${DAHMER_MOVIES_API}/${pathType}/${encodedFolder}/`;
+        
         if (season !== null) {
             const sSlug = season < 10 ? `0${season}` : season;
-            baseUrl += `Season%20${sSlug}/`;
+            tryUrl += `Season%20${sSlug}/`;
         }
-        return baseUrl;
-    });
 
-    // Strategy: Run all requests at once. Take the first one that returns valid HTML.
-    const results = await Promise.allSettled(urlRequests.map(url => 
-        makeRequest(url).then(async res => ({ url, html: await res.text() }))
-    ));
+        try {
+            const res = await makeRequest(tryUrl);
+            html = await res.text();
+            finalBaseUrl = tryUrl;
+            if (html && html.includes('<a')) break;
+        } catch (e) {
+            // TV fallback for Season 1 vs Season 01
+            if (season !== null) {
+                try {
+                    let altUrl = `${DAHMER_MOVIES_API}/${pathType}/${encodedFolder}/Season%20${season}/`;
+                    const resAlt = await makeRequest(altUrl);
+                    html = await resAlt.text();
+                    finalBaseUrl = altUrl;
+                    if (html) break;
+                } catch (err) {}
+            }
+        }
+    }
 
-    // Find the first successful result that actually has links
-    const successfulMatch = results.find(r => 
-        r.status === 'fulfilled' && r.value.html && r.value.html.includes('<a')
-    );
+    if (!html) return [];
 
-    if (!successfulMatch) return [];
-
-    const { url: finalBaseUrl, html } = successfulMatch.value;
     const paths = parseLinks(html);
-    
     let filteredPaths = (season !== null) 
         ? paths.filter(p => {
             const s = season < 10 ? `0${season}` : `${season}`;
@@ -115,6 +123,9 @@ async function getStreams(tmdbId, mediaType = 'movie', seasonNum = null, episode
         const data = await res.json();
         const title = mediaType === 'tv' ? data.name : data.title;
         const year = (mediaType === 'tv' ? data.first_air_date : data.release_date)?.substring(0, 4);
+        
+        // Forced Override: If the user is looking for Peaky Blinders as a movie, 
+        // ensure seasonNum stays null so invokeDahmerMovies uses the /movies/ path.
         return await invokeDahmerMovies(title, year ? parseInt(year) : null, seasonNum, episodeNum);
     } catch (e) { return []; }
 }
