@@ -1,11 +1,11 @@
-// Dahmer Movies Scraper - High Speed Optimized
-// Optimized for: Send Help, Zootopia 2, Peaky Blinders, Crime 101
+// Dahmer Movies Scraper - Parallel Search Edition
+// Fixed for: High-speed retrieval on Send Help, Zootopia 2, Peaky Blinders
 
-console.log('[DahmerMovies] Initializing Scraper');
+console.log('[DahmerMovies] Initializing Parallel Scraper');
 
 const TMDB_API_KEY = "439c478a771f35c05022f9feabcca01c";
 const DAHMER_MOVIES_API = 'https://a.111477.xyz';
-const TIMEOUT = 15000; // Reduced timeout per request to skip dead folders faster
+const TIMEOUT = 10000; 
 
 async function makeRequest(url) {
     return fetch(url, {
@@ -36,55 +36,44 @@ async function invokeDahmerMovies(title, year, season = null, episode = null) {
     const pathType = season === null ? 'movies' : 'tvs';
     const cleanTitle = title.replace(/:/g, '');
     
-    // PRIORITIZED VARIATIONS: Based on your screenshots
+    // Create all possible variations
     const folderVariations = [];
     if (season === null) {
-        folderVariations.push(`${cleanTitle} (${year})`); // Primary: Zootopia 2 (2025)
-        folderVariations.push(cleanTitle);              // Secondary: Goat
-        folderVariations.push(`${cleanTitle.replace(/ /g, '.')}.${year}`); // Fallback: Send.Help.2026
+        folderVariations.push(`${cleanTitle} (${year})`);
+        folderVariations.push(`${cleanTitle.replace(/ /g, '.')}.${year}`);
+        folderVariations.push(cleanTitle);
     } else {
         folderVariations.push(cleanTitle);
-        folderVariations.push(`${cleanTitle} -`); 
+        folderVariations.push(`${cleanTitle} -`);
+        folderVariations.push(cleanTitle.replace(/ /g, '.'));
     }
 
-    let html = '';
-    let finalBaseUrl = '';
-
-    // Fast-tracking the search
-    for (const folder of folderVariations) {
-        // Correct encoding for folder requests
+    // Map variations to actual URL strings
+    const urlRequests = folderVariations.map(folder => {
         const encodedFolder = encodeURIComponent(folder).replace(/\(/g, '%28').replace(/\)/g, '%29');
-        let tryUrl = `${DAHMER_MOVIES_API}/${pathType}/${encodedFolder}/`;
-        
+        let baseUrl = `${DAHMER_MOVIES_API}/${pathType}/${encodedFolder}/`;
         if (season !== null) {
             const sSlug = season < 10 ? `0${season}` : season;
-            tryUrl += `Season%20${sSlug}/`;
+            baseUrl += `Season%20${sSlug}/`;
         }
+        return baseUrl;
+    });
 
-        try {
-            const res = await makeRequest(tryUrl);
-            html = await res.text();
-            finalBaseUrl = tryUrl;
-            if (html && html.includes('<a')) break;
-        } catch (e) {
-            // Quick TV fallback for non-zero padded seasons
-            if (season !== null) {
-                try {
-                    let altUrl = `${DAHMER_MOVIES_API}/${pathType}/${encodedFolder}/Season%20${season}/`;
-                    const resAlt = await makeRequest(altUrl);
-                    html = await resAlt.text();
-                    finalBaseUrl = altUrl;
-                    if (html) break;
-                } catch (err) {}
-            }
-        }
-    }
+    // Strategy: Run all requests at once. Take the first one that returns valid HTML.
+    const results = await Promise.allSettled(urlRequests.map(url => 
+        makeRequest(url).then(async res => ({ url, html: await res.text() }))
+    ));
 
-    if (!html) return [];
+    // Find the first successful result that actually has links
+    const successfulMatch = results.find(r => 
+        r.status === 'fulfilled' && r.value.html && r.value.html.includes('<a')
+    );
 
+    if (!successfulMatch) return [];
+
+    const { url: finalBaseUrl, html } = successfulMatch.value;
     const paths = parseLinks(html);
     
-    // Filter logic
     let filteredPaths = (season !== null) 
         ? paths.filter(p => {
             const s = season < 10 ? `0${season}` : `${season}`;
@@ -92,12 +81,10 @@ async function invokeDahmerMovies(title, year, season = null, episode = null) {
             const epPattern = new RegExp(`(S${s}E${e}|${season}x${e}|[\\s\\.\\-_]${e}[\\s\\.\\-_]|^${e}\\s)`, 'i');
             return epPattern.test(p.text) || epPattern.test(p.href);
           })
-        : paths.filter(p => /\.(mkv|mp4|avi|webm)$/i.test(p.href));
+        : paths.filter(p => /\.(mkv|mp4|avi)$/i.test(p.href));
 
     return filteredPaths.map(path => {
         const resolvedUrl = new URL(path.href, finalBaseUrl).href;
-
-        // Final safe encoding for playback
         const finalUrl = decodeURIComponent(resolvedUrl)
             .replace(/ /g, '%20')
             .replace(/\(/g, '%28')
