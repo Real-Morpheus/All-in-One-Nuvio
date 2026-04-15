@@ -1,69 +1,81 @@
-/**
- * Nuvio-Compatible PrimeSrc Scraper
- * NO async/await allowed in this environment.
- */
+// PrimeSrc Scraper for Nuvio
+// Uses the official /api/v1/list_servers endpoint
 
-const TMDB_API_KEY = "20bf0a5cbc307e7889137457fa5b6b37";
 const PRIMESRC_BASE = "https://primesrc.me/api/v1/";
+const PRIMESRC_SITE = "https://primesrc.me";
 
 function getStreams(id, mediaType, season, episode) {
-    // 1. Convert IMDB to TMDB if necessary
-    var initialPromise;
+    // 1. Build the correct URL based on the documentation
+    var type = (season && episode) ? "tv" : "movie";
+    var url = PRIMESRC_BASE + "list_servers?type=" + type;
+
+    // Use imdb param if it starts with 'tt', otherwise use tmdb
     if (typeof id === 'string' && id.startsWith('tt')) {
-        var findUrl = "https://api.themoviedb.org/3/find/" + id + "?api_key=" + TMDB_API_KEY + "&external_source=imdb_id";
-        initialPromise = fetch(findUrl).then(function(r) { return r.json(); }).then(function(data) {
-            var res = (data.movie_results && data.movie_results[0]) || (data.tv_results && data.tv_results[0]);
-            return res ? { id: res.id, type: data.movie_results.length > 0 ? "movie" : "tv" } : null;
-        });
+        url += "&imdb=" + id;
     } else {
-        initialPromise = Promise.resolve({ id: id, type: mediaType || (season ? "tv" : "movie") });
+        url += "&tmdb=" + id;
     }
 
-    // 2. Main Logic Chain
-    return initialPromise.then(function(mapping) {
-        if (!mapping) return [];
+    if (type === "tv") {
+        url += "&season=" + season + "&episode=" + episode;
+    }
 
-        var searchUrl = PRIMESRC_BASE + "s?tmdb=" + mapping.id + "&type=" + mapping.type;
-        if (mapping.type === "tv") {
-            searchUrl += "&season=" + season + "&episode=" + episode;
+    console.log("[PrimeSrc] Fetching from: " + url);
+
+    // 2. Execute the request
+    return fetch(url, {
+        headers: {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+            "Referer": PRIMESRC_SITE + "/"
+        }
+    })
+    .then(function(response) {
+        if (!response.ok) throw new Error("HTTP " + response.status);
+        return response.json();
+    })
+    .then(function(data) {
+        // The API returns an object with a 'servers' array
+        if (!data || !data.servers || !Array.isArray(data.servers)) {
+            console.log("[PrimeSrc] No servers found in response.");
+            return [];
         }
 
-        // 3. Fetch Servers
-        return fetch(searchUrl, {
-            headers: { "Referer": "https://primesrc.me/", "User-Agent": "Mozilla/5.0" }
-        })
-        .then(function(r) { return r.json(); })
-        .then(function(data) {
-            if (!data || !data.servers) return [];
+        // 3. Map servers to Nuvio format
+        // NOTE: The Info API provides server names. 
+        // To get a direct video link, we usually point to the embed URL 
+        // because the API documentation doesn't list a "direct file" endpoint.
+        return data.servers.map(function(server) {
+            // Build the embed URL for the specific server
+            var embedUrl = PRIMESRC_SITE + "/embed/" + type + "?";
+            if (typeof id === 'string' && id.startsWith('tt')) {
+                embedUrl += "imdb=" + id;
+            } else {
+                embedUrl += "tmdb=" + id;
+            }
 
-            // 4. Resolve each server key into a link
-            var promises = data.servers.map(function(server) {
-                return fetch(PRIMESRC_BASE + "l?key=" + server.key, {
-                    headers: { "Referer": "https://primesrc.me/" }
-                })
-                .then(function(r) { return r.json(); })
-                .then(function(linkData) {
-                    return {
-                        name: "PrimeSrc - " + (server.name || "Direct"),
-                        url: linkData.link,
-                        quality: "720p/1080p",
-                        provider: "primesrc"
-                    };
-                })
-                .catch(function() { return null; });
-            });
+            if (type === "tv") {
+                embedUrl += "&season=" + season + "&episode=" + episode;
+            }
+            
+            // Whitelist just this server for this specific result
+            embedUrl += "&whitelistServers=" + encodeURIComponent(server.name);
 
-            return Promise.all(promises).then(function(results) {
-                return results.filter(function(s) { return s !== null && s.url; });
-            });
+            return {
+                name: "PrimeSrc - " + server.name,
+                url: embedUrl, // Nuvio handles embed URLs
+                quality: "Auto",
+                headers: { "Referer": PRIMESRC_SITE },
+                provider: "primesrc"
+            };
         });
-    }).catch(function(err) {
-        console.error("[PrimeSrc] Fatal Error: " + err.message);
+    })
+    .catch(function(error) {
+        console.error("[PrimeSrc] Scraper Error: " + error.message);
         return [];
     });
 }
 
-// Export for Nuvio
+// Export for Nuvio environment
 if (typeof module !== "undefined" && module.exports) {
     module.exports = { getStreams: getStreams };
 } else {
