@@ -5,7 +5,7 @@ function getStreams(id, mediaType, season, episode) {
     var type = (season && episode) ? "tv" : "movie";
     var url = PRIMESRC_BASE + "list_servers?type=" + type;
 
-    if (typeof id === 'string' && id.startsWith('tt')) {
+    if (typeof id === 'string' && id.indexOf('tt') === 0) {
         url += "&imdb=" + id;
     } else {
         url += "&tmdb=" + id;
@@ -24,48 +24,47 @@ function getStreams(id, mediaType, season, episode) {
         }
     })
     .then(function(response) {
-        if (!response.ok) throw new Error("HTTP " + response.status);
         return response.json();
     })
     .then(function(data) {
         if (!data || !data.servers) return [];
 
         return data.servers.map(function(s) {
-            // Safety check for the key property name
-            var serverKey = s.key || s.keyId || s.id;
-            if (!serverKey) return null;
+            // Using a simple check to find the key
+            var k = s.key;
+            if(!k) k = s.id;
 
-            var playbackUrl = PRIMESRC_BASE + "l?key=" + serverKey;
+            var playbackUrl = PRIMESRC_BASE + "l?key=" + k;
             
-            // Default Referer
-            var streamRef = PRIMESRC_SITE + "/";
-            var streamOrigin = PRIMESRC_SITE;
+            // Apply the headers you provided for Voe and Streamtape
+            // We use a simple if/else to keep the fetch stable
+            var ref = "https://primesrc.me/";
+            var org = "https://primesrc.me";
 
-            // Specific Header Logic from your working logs
-            var serverName = (s.name || "").toLowerCase();
-            if (serverName.indexOf("voe") !== -1) {
-                streamRef = "https://marissasharecareer.com/";
-                streamOrigin = "https://marissasharecareer.com";
-            } else if (serverName.indexOf("streamta") !== -1 || serverName.indexOf("tape") !== -1) {
-                streamRef = "https://streamta.site/";
-                streamOrigin = "https://streamta.site";
+            if (s.name == "Voe") {
+                ref = "https://marissasharecareer.com/";
+                org = "https://marissasharecareer.com";
+            }
+            if (s.name == "Streamtape") {
+                ref = "https://streamta.site/";
+                org = "https://streamta.site";
             }
 
             return {
-                name: "PrimeSrc - " + (s.name || "HD"),
+                name: "PrimeSrc - " + s.name,
                 url: playbackUrl,
                 quality: "1080p",
                 headers: { 
                     "User-Agent": ua,
-                    "Referer": streamRef,
-                    "Origin": streamOrigin,
+                    "Referer": ref,
+                    "Origin": org,
                     "Accept": "*/*",
                     "Accept-Encoding": "identity;q=1, *;q=0",
                     "sec-ch-ua-platform": "Android",
                     "sec-ch-ua-mobile": "?1"
                 }
             };
-        }).filter(function(item) { return item !== null; });
+        });
     })
     .catch(function(error) {
         return [];
