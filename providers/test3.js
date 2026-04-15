@@ -1,6 +1,7 @@
 const TMDB_API_KEY = "20bf0a5cbc307e7889137457fa5b6b37";
 const XPRIME_BACKEND = "https://backend.xprime.tv";
 const XPRIME_PLAYER = "https://xk4l.mzt4pr8wlkxnv0qsha5g.website";
+
 const DEFAULT_HEADERS = {
   "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
   "Accept": "application/json, */*",
@@ -15,7 +16,7 @@ function makeRequest(url, options) {
   var headers = Object.assign({}, DEFAULT_HEADERS, options.headers || {});
   return fetch(url, {
     method: options.method || "GET",
-    headers: headers
+    headers: headers // Explicitly passing the headers here
   }).then(function(response) {
     if (!response.ok) throw new Error("HTTP " + response.status);
     return response;
@@ -39,7 +40,10 @@ function getTmdbInfo(tmdbId, mediaType) {
 }
 
 function getStreamsFromBackend(tmdbId, mediaType, name, seasonNum, episodeNum) {
-  var url = mediaType === "movie" ? XPRIME_BACKEND + "/primebox?id=" + tmdbId + "&type=movie&name=" + encodeURIComponent(name || "") : XPRIME_BACKEND + "/primebox?id=" + tmdbId + "&type=tv&name=" + encodeURIComponent(name || "") + "&season=" + seasonNum + "&episode=" + episodeNum;
+  var url = mediaType === "movie" 
+    ? XPRIME_BACKEND + "/primebox?id=" + tmdbId + "&type=movie&name=" + encodeURIComponent(name || "") 
+    : XPRIME_BACKEND + "/primebox?id=" + tmdbId + "&type=tv&name=" + encodeURIComponent(name || "") + "&season=" + seasonNum + "&episode=" + episodeNum;
+  
   return makeRequest(url).then(function(res) {
     if (!res) return null;
     return res.json();
@@ -51,6 +55,7 @@ function getStreamsFromBackend(tmdbId, mediaType, name, seasonNum, episodeNum) {
 function getStreams(tmdbId, mediaType, seasonNum, episodeNum) {
   mediaType = mediaType || "movie";
   console.log("[xprime] Fetching: " + tmdbId + " type=" + mediaType);
+  
   return getTmdbInfo(tmdbId, mediaType).then(function(tmdbInfo) {
     var title = tmdbInfo && tmdbInfo.title || "";
     return getStreamsFromBackend(tmdbId, mediaType, title, seasonNum || 1, episodeNum || 1);
@@ -61,11 +66,11 @@ function getStreams(tmdbId, mediaType, seasonNum, episodeNum) {
       sources.forEach(function(src) {
         if (src.url) {
           streams.push({
-            name: "XPrime - " + (src.quality || src.label || "Auto") + " [backend]",
+            name: "XPrime - " + (src.quality || src.label || "Auto"),
             url: src.url,
             quality: src.quality || "Auto",
             size: "Unknown",
-            // CRITICAL ADDITION: This allows ExoPlayer to bypass the security block
+            // THESE HEADERS ARE WHAT EXOPLAYER USES TO PLAY THE VIDEO
             headers: {
               "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
               "Referer": "https://xprime.stream/",
@@ -81,8 +86,8 @@ function getStreams(tmdbId, mediaType, seasonNum, episodeNum) {
         }
       });
     }
-    
-    // We keep this exactly as you had it so it 'fetches' exactly the same way.
+
+    // Keep the player fallback exactly as you had it so you can see if it's at least finding the TMDB info
     if (streams.length === 0) {
       var playerUrl = mediaType === "movie" ? XPRIME_PLAYER + "/watch/" + tmdbId : XPRIME_PLAYER + "/watch/t" + tmdbId + "/" + (seasonNum || 1) + "/" + (episodeNum || 1);
       streams.push({
@@ -95,6 +100,7 @@ function getStreams(tmdbId, mediaType, seasonNum, episodeNum) {
         subtitles: []
       });
     }
+    
     console.log("[xprime] Found " + streams.length + " streams");
     return streams;
   }).catch(function(err) {
