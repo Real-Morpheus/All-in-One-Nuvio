@@ -1,72 +1,75 @@
-// PrimeSrc Scraper - Scrubbed Version
-// No external TMDB lookups - Direct IMDb/TMDB param usage
+// PrimeSrc Scraper for Nuvio
+// Restored to the working fetch version with specific Android TV playback fixes
 
-var PRIMESRC_API = "https://primesrc.me/api/v1/";
+var TMDB_API_KEY = "20bf0a5cbc307e7889137457fa5b6b37";
+var PRIMESRC_BASE = "https://primesrc.me/api/v1/";
 
-function getStreams(id, mediaType, season, episode) {
-    // 1. Determine ID type (imdb vs tmdb)
-    var idParam = (typeof id === 'string' && id.indexOf('tt') === 0) ? "&imdb=" : "&tmdb=";
-    var type = (season && episode) ? "tv" : "movie";
+function getStreams(tmdbId, mediaType, seasonNum, episodeNum) {
+    var type = (seasonNum && episodeNum) ? "tv" : "movie";
+    var isImdb = (typeof tmdbId === 'string' && tmdbId.indexOf('tt') === 0);
     
-    // 2. Build Search URL
-    var searchUrl = PRIMESRC_API + "list_servers?type=" + type + idParam + id;
-    if (type === "tv") {
-        searchUrl += "&season=" + season + "&episode=" + episode;
+    // 1. Build Search URL
+    var searchUrl = PRIMESRC_BASE + "list_servers?type=" + type;
+    if (isImdb) {
+        searchUrl += "&imdb=" + tmdbId;
+    } else {
+        searchUrl += "&tmdb=" + tmdbId;
     }
 
-    // Exact UA from your working playback logs
+    if (type === "tv") {
+        searchUrl += "&season=" + seasonNum + "&episode=" + episodeNum;
+    }
+
+    // Exact User-Agent from your working logs
     var ua = "Mozilla/5.0 (Linux; Android 15; ALT-NX1 Build/HONORALT-N31; wv) AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 Chrome/146.0.7680.177 Mobile Safari/537.36";
 
     return fetch(searchUrl, {
         headers: { "User-Agent": ua, "Referer": "https://primesrc.me/" }
     })
-    .then(function(res) { 
-        return res.json(); 
-    })
+    .then(function(r) { return r.json(); })
     .then(function(data) {
         if (!data || !data.servers) return [];
 
-        var fetchPromises = data.servers.map(function(s) {
-            return fetch(PRIMESRC_API + "l?key=" + s.key, {
+        var results = [];
+        var promises = data.servers.map(function(s) {
+            return fetch(PRIMESRC_BASE + "l?key=" + s.key, {
                 headers: { "User-Agent": ua, "Referer": "https://primesrc.me/" }
             })
-            .then(function(lRes) { return lRes.json(); })
-            .then(function(lData) {
-                if (!lData || !lData.link) return null;
+            .then(function(res) { return res.json(); })
+            .then(function(ld) {
+                if (!ld || !ld.link) return null;
 
-                var finalUrl = lData.link;
+                var finalUrl = ld.link;
                 var streamRef = "https://primesrc.me/";
 
-                // Referer fixes for 23003 playback error
-                if (finalUrl.indexOf("streamta.site") !== -1) streamRef = "https://streamta.site/";
-                if (finalUrl.indexOf("cloudatacdn.com") !== -1) streamRef = "https://playmogo.com/";
+                // --- HEADER FIXES FOR 23003 ERROR ---
+                if (finalUrl.indexOf("streamta.site") !== -1) {
+                    streamRef = "https://streamta.site/";
+                } else if (finalUrl.indexOf("cloudatacdn.com") !== -1) {
+                    streamRef = "https://playmogo.com/";
+                }
 
                 return {
-                    name: "PrimeSrc: " + (s.name || "HD"),
+                    name: "PrimeSrc - " + (s.name || "HD"),
                     url: finalUrl,
                     quality: "1080p",
                     headers: {
                         "User-Agent": ua,
                         "Referer": streamRef,
                         "Origin": streamRef.replace(/\/$/, ""),
-                        "Accept": "*/*"
+                        "Accept": "*/*",
+                        "Accept-Encoding": "identity;q=1, *;q=0"
                     }
                 };
             })
             .catch(function() { return null; });
         });
 
-        return Promise.all(fetchPromises).then(function(results) {
-            var filtered = [];
-            for (var i = 0; i < results.length; i++) {
-                if (results[i]) filtered.push(results[i]);
-            }
-            return filtered;
+        return Promise.all(promises).then(function(all) {
+            return all.filter(function(item) { return item !== null; });
         });
     })
-    .catch(function() { 
-        return []; 
-    });
+    .catch(function() { return []; });
 }
 
 if (typeof module !== 'undefined') module.exports = { getStreams: getStreams };
