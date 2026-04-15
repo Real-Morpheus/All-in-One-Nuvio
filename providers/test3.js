@@ -1,62 +1,61 @@
 // PrimeSrc Scraper for Nuvio
-// Returns streams via PrimeSrc API with direct header fixes
+// Logic: Restored to basic fetching loops
 
-var TMDB_API_KEY = "20bf0a5cbc307e7889137457fa5b6b37";
-var PRIMESRC_BASE = "https://primesrc.me/api/v1/";
+var PRIMESRC_API = "https://primesrc.me/api/v1/";
 
-function getStreams(tmdbId, mediaType, seasonNum, episodeNum) {
-    var type = (seasonNum && episodeNum) ? "tv" : "movie";
-    var url = PRIMESRC_BASE + "list_servers?type=" + type;
+function getStreams(id, mediaType, season, episode) {
+    var type = (season && episode) ? "tv" : "movie";
+    var isImdb = (typeof id === 'string' && id.indexOf('tt') === 0);
     
-    // Check if ID is IMDB (tt) or TMDB
-    if (typeof tmdbId === 'string' && tmdbId.indexOf('tt') === 0) {
-        url += "&imdb=" + tmdbId;
+    var searchUrl = PRIMESRC_API + "list_servers?type=" + type;
+    if (isImdb) {
+        searchUrl += "&imdb=" + id;
     } else {
-        url += "&tmdb=" + tmdbId;
+        searchUrl += "&tmdb=" + id;
     }
-
+    
     if (type === "tv") {
-        url += "&season=" + seasonNum + "&episode=" + episodeNum;
+        searchUrl += "&season=" + season + "&episode=" + episode;
     }
 
-    var userAgent = "Mozilla/5.0 (Linux; Android 15; ALT-NX1) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Mobile Safari/537.36";
+    var ua = "Mozilla/5.0 (Linux; Android 15; ALT-NX1 Build/HONORALT-N31; wv) AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 Chrome/146.0.7680.177 Mobile Safari/537.36";
 
-    return fetch(url, {
-        headers: { "User-Agent": userAgent, "Referer": "https://primesrc.me/" }
+    return fetch(searchUrl, {
+        headers: { "User-Agent": ua, "Referer": "https://primesrc.me/" }
     })
-    .then(function(response) {
-        return response.json();
+    .then(function(res) { 
+        return res.json(); 
     })
     .then(function(data) {
         if (!data || !data.servers) return [];
 
-        var streamResults = [];
+        var results = [];
         var servers = data.servers;
 
-        // Process servers one by one to ensure fetch stability
-        var promises = servers.map(function(server) {
-            var linkUrl = PRIMESRC_BASE + "l?key=" + server.key;
-            
-            return fetch(linkUrl, {
-                headers: { "User-Agent": userAgent, "Referer": "https://primesrc.me/" }
+        // Using a basic for-loop for maximum stability in Nuvio
+        var fetchAll = [];
+        for (var i = 0; i < servers.length; i++) {
+            var s = servers[i];
+            var p = fetch(PRIMESRC_API + "l?key=" + s.key, {
+                headers: { "User-Agent": ua, "Referer": "https://primesrc.me/" }
             })
-            .then(function(res) { return res.json(); })
-            .then(function(linkData) {
-                if (!linkData || !linkData.link) return null;
+            .then(function(lRes) { return lRes.json(); })
+            .then(function(lData) {
+                if (!lData || !lData.link) return null;
 
-                var finalUrl = linkData.link;
+                var finalUrl = lData.link;
                 var streamRef = "https://primesrc.me/";
 
-                // Apply the Referer logic from your successful playback logs
+                // Apply referer fixes from your successful logs
                 if (finalUrl.indexOf("streamta.site") !== -1) streamRef = "https://streamta.site/";
                 if (finalUrl.indexOf("cloudatacdn.com") !== -1) streamRef = "https://playmogo.com/";
 
                 return {
-                    name: "PrimeSrc - " + (server.name || "Server"),
+                    name: "PrimeSrc: " + (s.name || "HD"),
                     url: finalUrl,
                     quality: "1080p",
                     headers: {
-                        "User-Agent": userAgent,
+                        "User-Agent": ua,
                         "Referer": streamRef,
                         "Origin": streamRef.replace(/\/$/, ""),
                         "Accept": "*/*"
@@ -64,17 +63,21 @@ function getStreams(tmdbId, mediaType, seasonNum, episodeNum) {
                 };
             })
             .catch(function() { return null; });
-        });
+            
+            fetchAll.push(p);
+        }
 
-        return Promise.all(promises).then(function(results) {
-            return results.filter(function(r) { return r !== null; });
+        return Promise.all(fetchAll).then(function(items) {
+            var filtered = [];
+            for (var j = 0; j < items.length; j++) {
+                if (items[j]) filtered.push(items[j]);
+            }
+            return filtered;
         });
     })
-    .catch(function(err) {
-        return [];
+    .catch(function() { 
+        return []; 
     });
 }
 
-if (typeof module !== "undefined") {
-    module.exports = { getStreams: getStreams };
-}
+if (typeof module !== 'undefined') module.exports = { getStreams: getStreams };
