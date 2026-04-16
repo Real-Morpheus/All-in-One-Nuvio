@@ -1,66 +1,75 @@
-const TMDB_API_KEY = "20bf0a5cbc307e7889137457fa5b6b37";
-const XPRIME_BACKEND = "https://backend.xprime.tv";
+function getStreams(tmdbId, mediaType) {
+  return new Promise((resolve) => {
 
-const DEFAULT_HEADERS = {
-  "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-  "Accept": "application/json, */*",
-  "Referer": "https://xprime.stream/",
-  "Origin": "https://xprime.stream"
-};
+    let streams = [];
 
-function getStreams(tmdbId, mediaType, seasonNum, episodeNum) {
-  mediaType = mediaType || "movie";
-  
-  // 1. Get the IMDb ID from TMDB (Backends usually need tt1234567, not just numbers)
-  var tmdbUrl = "https://api.themoviedb.org/3/" + (mediaType === "tv" ? "tv" : "movie") + "/" + tmdbId + "?api_key=" + TMDB_API_KEY + "&append_to_response=external_ids";
+    fetch("https://api.themoviedb.org/3/movie/" + tmdbId)
+      .then(res => res.json())
+      .then(data => {
 
-  return fetch(tmdbUrl, { headers: { "Accept": "application/json" } })
-    .then(function(res) { return res.json(); })
-    .then(function(tmdbData) {
-      var title = mediaType === "tv" ? tmdbData.name : tmdbData.title;
-      // Get the 'tt' ID. If it's not there, stick to the tmdbId.
-      var queryId = (tmdbData.external_ids && tmdbData.external_ids.imdb_id) || tmdbId;
-      
-      var backendUrl = mediaType === "movie" 
-        ? XPRIME_BACKEND + "/primebox?id=" + queryId + "&type=movie&name=" + encodeURIComponent(title) 
-        : XPRIME_BACKEND + "/primebox?id=" + queryId + "&type=tv&name=" + encodeURIComponent(title) + "&season=" + (seasonNum || 1) + "&episode=" + (episodeNum || 1);
-      
-      return fetch(backendUrl, { headers: DEFAULT_HEADERS });
-    })
-    .then(function(res) { return res.json(); })
-    .then(function(backendData) {
-      var streams = [];
-      // Parse the results
-      var sources = Array.isArray(backendData) ? backendData : (backendData.streams || (backendData.url ? [backendData] : []));
-      
-      sources.forEach(function(src) {
-        // ONLY add the link if it's a real video (doesn't contain the website 'watch' path)
-        if (src.url && src.url.indexOf('/watch/') === -1) {
-          streams.push({
-            name: "XPrime - " + (src.quality || "HD"),
-            url: src.url,
-            quality: src.quality || "Auto",
-            // ExoPlayer needs these to bypass the 403 error
-            headers: {
-              "User-Agent": DEFAULT_HEADERS["User-Agent"],
-              "Referer": "https://xprime.stream/",
-              "Origin": "https://xprime.stream"
-            },
-            provider: "xprime",
-            subtitles: (src.subtitles || []).map(function(s) {
-              return { url: s.file || s.url, lang: s.label || "English" };
-            })
-          });
-        }
-      });
+        let title = data.title;
 
-      return streams; 
-    })
-    .catch(function() {
-      return [];
-    });
+        return fetch("https://cinedoze.tv/?s=" + encodeURIComponent(title));
+      })
+      .then(res => res.text())
+      .then(html => {
+
+        let match = html.match(/href="(https:\/\/cinedoze\.tv\/[^"]+)"/);
+
+        if (!match) return resolve([]);
+
+        return fetch(match[1]);
+      })
+      .then(res => res ? res.text() : null)
+      .then(html => {
+
+        if (!html) return resolve([]);
+
+        let linkMatches = html.match(/https:\/\/cinedoze\.tv\/links\/[^\s"]+/g) || [];
+
+        if (linkMatches.length === 0) return resolve([]);
+
+        let promises = linkMatches.map(linkUrl => {
+
+          let quality = "Auto";
+          if (linkUrl.includes("4k")) quality = "4K";
+          else if (linkUrl.includes("1080")) quality = "1080p";
+          else if (linkUrl.includes("720")) quality = "720p";
+
+          return fetch(linkUrl)
+            .then(res => res.text())
+            .then(page => {
+
+              let links = page.match(/https?:\/\/[^\s"<]+/g) || [];
+
+              links.forEach(link => {
+
+                if (
+                  link.includes("hubcloud") ||
+                  link.includes("gdflix") ||
+                  link.includes("filepress")
+                ) {
+                  streams.push({
+                    name: "Cinedoze",
+                    title: link.split('/')[2] + " - " + quality,
+                    url: link,
+                    quality: quality,
+                    provider: "cinedoze"
+                  });
+                }
+
+              });
+
+            });
+
+        });
+
+        return Promise.all(promises);
+      })
+      .then(() => resolve(streams))
+      .catch(() => resolve([]));
+
+  });
 }
 
-if (typeof module !== "undefined" && module.exports) {
-  module.exports = { getStreams };
-}
+module.exports = { getStreams };
