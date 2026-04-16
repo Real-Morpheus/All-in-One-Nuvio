@@ -1,5 +1,5 @@
 // ============================================================
-// Einthusan Provider - Connection Timeout Fix
+// Einthusan Provider - Final Handshake Fix
 // ============================================================
 
 var BASE_URL = 'https://einthusan.tv';
@@ -7,52 +7,52 @@ var BASE_URL = 'https://einthusan.tv';
 var HEADERS = {
   'User-Agent': 'Mozilla/5.0 (Linux; Android 15; ALT-NX1 Build/HONORALT-N31; wv) AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 Chrome/146.0.7680.177 Mobile Safari/537.36',
   'Referer': 'https://einthusan.tv/',
-  'Accept': '*/*',
-  'Connection': 'keep-alive',
-  'Accept-Encoding': 'identity'
+  'sec-ch-ua': '"Chromium";v="146", "Not-A.Brand";v="24", "Android WebView";v="146"',
+  'sec-ch-ua-mobile': '?1',
+  'sec-ch-ua-platform': '"Android"',
+  'Accept-Encoding': 'identity;q=1, *;q=0',
+  'Accept': '*/*'
 };
 
 function getStreams(tmdbId, mediaType) {
   return new Promise(function (resolve) {
-    // Using the specific movie ID provided
-    var watchUrl = BASE_URL + '/movie/watch/21lw/?lang=hindi';
+    // Note: Replace '661t' with dynamic logic later; hardcoded for this specific test
+    var watchUrl = BASE_URL + '/movie/watch/661t/?lang=hindi';
 
-    fetch(watchUrl, { 
-      headers: HEADERS,
-      method: 'GET',
-      redirect: 'follow' 
-    })
+    fetch(watchUrl, { headers: HEADERS })
       .then(function (res) { return res.text(); })
       .then(function (html) {
-        // Regex to find the stream
-        var streamPattern = /["'](https?:\/\/[^"']+\.(?:m3u8|mp4)[^"']*)["']/i;
+        // Updated Regex to specifically target the cdn1.einthusan.io structure
+        var streamPattern = /["'](https?:\/\/cdn1\.einthusan\.io\/[^"']+)["']/i;
         var match = html.match(streamPattern);
 
         if (match) {
-          var rawUrl = match[1].replace(/&amp;/g, '&').trim();
-
-          // FIX: If the URL is an IP address, the SSL handshake often fails in Java/Android.
-          // We keep it as is but ensure it's not being double-escaped.
-          var finalUrl = rawUrl.replace(/\\\//g, '/');
+          // 1. Clean HTML entities (&amp; -> &)
+          var streamUrl = match[1].replace(/&amp;/g, '&');
+          
+          // 2. Remove any backslashes (often added by JS escapes in the source)
+          streamUrl = streamUrl.replace(/\\/g, '');
 
           resolve([{
-            url: finalUrl,
+            url: streamUrl,
             quality: 'HD',
-            format: finalUrl.includes('m3u8') ? 'm3u8' : 'mp4',
+            // If the URL contains .m3u8, ensure the format is set correctly
+            format: streamUrl.includes('m3u8') ? 'm3u8' : 'mp4',
+            // 3. Forward the exact headers to the Nuvio Player engine
             headers: {
-               'User-Agent': HEADERS['User-Agent'],
-               'Referer': 'https://einthusan.tv/',
-               'Origin': 'https://einthusan.tv',
-               'Accept': '*/*',
-               'Connection': 'keep-alive'
+              'User-Agent': HEADERS['User-Agent'],
+              'Referer': 'https://einthusan.tv/',
+              'Origin': 'https://einthusan.tv',
+              'Accept-Encoding': 'identity;q=1, *;q=0',
+              'sec-ch-ua': HEADERS['sec-ch-ua'],
+              'sec-ch-ua-platform': '"Android"'
             }
           }]);
         } else {
           resolve([]);
         }
       })
-      .catch(function (err) {
-        console.log('Provider Error: ' + err);
+      .catch(function () {
         resolve([]);
       });
   });
