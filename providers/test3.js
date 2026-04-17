@@ -1,103 +1,107 @@
-/* {
-  "name": "ShowBox Pro",
-  "author": "Nuvio User",
-  "version": "1.2.0",
-  "settings": [
-    {
-      "key": "uiToken",
-      "type": "text",
-      "label": "UI Token (Cookie)",
-      "placeholder": "Paste your ShowBox cookie here..."
-    },
-    {
-      "key": "ossGroup",
-      "type": "text",
-      "label": "OSS Group (Optional)",
-      "placeholder": "e.g. 12345"
-    }
-  ]
-} */
-
 /**
- * ShowBox Scraper for Nuvio (Android TV Optimized)
+ * @name ShowBox Pro
+ * @description ShowBox API for Nuvio TV & Mobile
+ * @settings
+ * [
+ * {"name": "uiToken", "type": "text", "label": "UI Token (Cookie)"},
+ * {"name": "ossGroup", "type": "text", "label": "OSS Group (Optional)"}
+ * ]
  */
 
-const TMDB_API_KEY = '439c478a771f35c05022f9feabcca01c';
-const TMDB_BASE_URL = 'https://api.themoviedb.org/3';
-const SHOWBOX_API_BASE = 'https://febapi.nuvioapp.space/api/media';
+// ShowBox Scraper - Compatibility Build for Android TV
+var TMDB_API_KEY = '439c478a771f35c05022f9feabcca01c';
+var TMDB_BASE_URL = 'https://api.themoviedb.org/3';
+var SHOWBOX_API_BASE = 'https://febapi.nuvioapp.space/api/media';
 
-const WORKING_HEADERS = {
-    'User-Agent': 'Mozilla/5.0 (Linux; Android 11; Pixel 5) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/90.0.4430.91 Mobile Safari/537.36',
+var WORKING_HEADERS = {
+    'User-Agent': 'Mozilla/5.0 (Linux; Android 10; SM-G981B) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/80.0.3987.162 Mobile Safari/537.36',
     'Accept': 'application/json',
     'Content-Type': 'application/json'
 };
 
-// --- SETTINGS RETRIEVAL ---
+// Android TV compatible settings lookup
 function getSettingsValue(key) {
     try {
-        const settings = (typeof global !== 'undefined' && global.SCRAPER_SETTINGS) ? global.SCRAPER_SETTINGS : 
-                         (typeof window !== 'undefined' && window.SCRAPER_SETTINGS) ? window.SCRAPER_SETTINGS : {};
-        return settings[key] || '';
+        if (typeof global !== 'undefined' && global.SCRAPER_SETTINGS) {
+            return global.SCRAPER_SETTINGS[key] || "";
+        }
+        if (typeof window !== 'undefined' && window.SCRAPER_SETTINGS) {
+            return window.SCRAPER_SETTINGS[key] || "";
+        }
     } catch (e) {
-        return '';
+        return "";
     }
+    return "";
 }
 
-// --- NETWORK HELPER WITH TIMEOUT ---
-function makeRequest(url, options = {}) {
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 12000); // 12s for TV stability
-
-    return fetch(url, {
-        method: options.method || 'GET',
-        headers: { ...WORKING_HEADERS, ...options.headers },
-        signal: controller.signal,
-        ...options
-    }).then(function(response) {
-        clearTimeout(timeoutId);
-        if (!response.ok) throw new Error(`HTTP ${response.status}`);
-        return response;
-    }).catch(function(error) {
-        clearTimeout(timeoutId);
-        throw error;
-    });
-}
-
-// --- UTILITIES ---
-function formatQuality(str) {
-    if (!str) return 'Unknown';
-    const s = str.toUpperCase();
-    if (s.includes('2160') || s.includes('4K')) return '4K';
-    if (s.includes('1080')) return '1080p';
-    if (s.includes('720')) return '720p';
-    if (s.includes('480')) return '480p';
-    return str;
-}
-
-function getTMDBDetails(tmdbId, type) {
-    const endpoint = type === 'tv' ? 'tv' : 'movie';
-    const url = `${TMDB_BASE_URL}/${endpoint}/${tmdbId}?api_key=${TMDB_API_KEY}`;
+function getTMDBDetails(tmdbId, mediaType) {
+    var endpoint = (mediaType === 'tv') ? 'tv' : 'movie';
+    var url = TMDB_BASE_URL + '/' + endpoint + '/' + tmdbId + '?api_key=' + TMDB_API_KEY;
     
-    return makeRequest(url)
-        .then(res => res.json())
-        .then(data => ({
-            title: type === 'tv' ? data.name : data.title,
-            year: (type === 'tv' ? data.first_air_date : data.release_date)?.split('-')[0] || ''
-        }))
-        .catch(() => ({ title: 'Media', year: '' }));
+    return fetch(url, { headers: WORKING_HEADERS })
+        .then(function(res) { return res.json(); })
+        .then(function(data) {
+            return {
+                title: (mediaType === 'tv') ? data.name : data.title,
+                year: (mediaType === 'tv' ? data.first_air_date : data.release_date || "").split('-')[0]
+            };
+        })
+        .catch(function() {
+            return { title: "Media", year: "" };
+        });
 }
 
-// --- CORE SCRAPER FUNCTION ---
-function getStreams(tmdbId, mediaType = 'movie', seasonNum = null, episodeNum = null) {
-    const cookie = getSettingsValue('uiToken');
-    const ossGroup = getSettingsValue('ossGroup');
+function getStreams(tmdbId, mediaType, seasonNum, episodeNum) {
+    var cookie = getSettingsValue('uiToken');
+    var ossGroup = getSettingsValue('ossGroup');
 
-    if (!cookie) {
-        console.log('[ShowBox] No UI Token found. Please enter it in Settings.');
+    if (!cookie || cookie === "") {
+        console.log("[ShowBox] No Token found in Settings");
         return Promise.resolve([]);
     }
 
-    return getTMDBDetails(tmdbId, mediaType).then(info => {
-        let apiUrl;
+    return getTMDBDetails(tmdbId, mediaType).then(function(info) {
+        var apiUrl;
         if (mediaType === 'tv') {
-            const ossPath = oss
+            var ossPath = ossGroup ? '/oss=' + ossGroup : '';
+            apiUrl = SHOWBOX_API_BASE + '/tv/' + tmdbId + ossPath + '/' + seasonNum + '/' + episodeNum + '?cookie=' + encodeURIComponent(cookie);
+        } else {
+            apiUrl = SHOWBOX_API_BASE + '/movie/' + tmdbId + '?cookie=' + encodeURIComponent(cookie);
+        }
+
+        return fetch(apiUrl, { headers: WORKING_HEADERS })
+            .then(function(res) { return res.json(); })
+            .then(function(data) {
+                if (!data || !data.versions) return [];
+                
+                var streams = [];
+                for (var i = 0; i < data.versions.length; i++) {
+                    var v = data.versions[i];
+                    if (!v.links) continue;
+                    
+                    for (var j = 0; j < v.links.length; j++) {
+                        var l = v.links[j];
+                        var q = (l.quality || v.quality || "HD").toUpperCase();
+                        
+                        streams.push({
+                            name: "ShowBox " + q,
+                            title: info.title + (info.year ? " (" + info.year + ")" : ""),
+                            url: l.url,
+                            quality: q,
+                            provider: "showbox"
+                        });
+                    }
+                }
+                return streams;
+            })
+            .catch(function(err) {
+                console.log("[ShowBox] Error: " + err.message);
+                return [];
+            });
+    });
+}
+
+// Ensure the TV engine sees the function globally
+if (typeof global !== 'undefined') { global.getStreams = getStreams; }
+if (typeof window !== 'undefined') { window.getStreams = getStreams; }
+if (typeof module !== 'undefined') { module.exports = { getStreams: getStreams }; }
