@@ -513,13 +513,13 @@
     {
       "id": "test3",
       "name": "Test3",
-      "description": "Direct links via StreamFlix API",
+      "description": "Direct links via ShowBox API",
       "version": "1.0.0",
       "author": "Nuvio Team",
       "supportedTypes": ["movie", "tv"],
       "filename": "providers/test3.js",
       "enabled": true,
-      "formats": ["mp4", "m3u8"],
+      "formats": ["mp4", "mkv", "m3u8"],
       "logo": "",
       "contentLanguage": ["en"]
     },
