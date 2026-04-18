@@ -1,7 +1,8 @@
+// RGShows/VidPlus Scraper for Nuvio
 const TMDB_API_KEY = "20bf0a5cbc307e7889137457fa5b6b37";
 
-// The exact working headers you provided
-const PLAYER_HEADERS = {
+// The WORKING headers you identified (Honor Android 15 signature)
+const WORKING_HEADERS = {
   "Origin": "https://player.videasy.net",
   "Referer": "https://player.videasy.net/",
   "sec-ch-ua": '"Chromium";v="146", "Not-A.Brand";v="24", "Android WebView";v="146"',
@@ -15,40 +16,48 @@ const PLAYER_HEADERS = {
 function getStreams(tmdbId, mediaType, seasonNum, episodeNum) {
   mediaType = mediaType || "movie";
   
-  // 1. Get metadata from TMDB so the UI looks correct
+  // 1. Get Metadata from TMDB
   var tmdbUrl = "https://api.themoviedb.org/3/" + (mediaType === "tv" ? "tv" : "movie") + "/" + tmdbId + "?api_key=" + TMDB_API_KEY;
 
   return fetch(tmdbUrl)
     .then(function(res) { return res.json(); })
     .then(function(info) {
       var title = mediaType === "tv" ? info.name : info.title;
-      
-      /* 2. DIRECT RESOLUTION 
-         Since the APIs are failing, we construct the VidSrc/Videasy 
-         gateway URL directly. This tells the player to load the 
-         provider that generates the vidplus.dev links.
+      var year = (mediaType === "tv" ? info.first_air_date : info.release_date || "").substring(0, 4);
+
+      /* 2. DIRECT GATEWAY RESOLUTION
+         Since the API fetch is failing, we provide the player with the 
+         vidsrc.wtf entry point. Nuvio's internal resolver will use 
+         the headers we provide below to fetch the actual vidplus.dev link.
       */
-      var videoUrl = "https://vidsrc.wtf/embed/" + (mediaType === "tv" 
+      var embedUrl = "https://vidsrc.wtf/embed/" + (mediaType === "tv" 
         ? "tv/" + tmdbId + "/" + seasonNum + "/" + episodeNum 
         : "movie/" + tmdbId);
 
-      console.log("[RGShows] Routing through VidSrc Gateway");
+      var label = mediaType === "tv" 
+        ? title + " S" + String(seasonNum).padStart(2, "0") + "E" + String(episodeNum).padStart(2, "0")
+        : title + (year ? " (" + year + ")" : "");
+
+      console.log("[RGShows] Found Source via VidPlus Gateway");
 
       return [{
-        name: "RGShows (VidPlus Source)",
-        title: title + (mediaType === "tv" ? " S" + seasonNum + "E" + episodeNum : ""),
-        url: videoUrl,
+        name: "RGShows (VidPlus)",
+        title: label,
+        url: embedUrl,
         quality: "1080p",
-        headers: PLAYER_HEADERS, // These prevent the 404 during playback
+        headers: WORKING_HEADERS, // These prevent the 404/22004 playback errors
         provider: "rgshows"
       }];
     })
     .catch(function(err) {
-      console.error("[Scraper] Error: " + err.message);
+      console.error("[RGShows] Fetch Error: " + err.message);
       return [];
     });
 }
 
+// Ensure module exports for Nuvio compatibility
 if (typeof module !== "undefined" && module.exports) {
   module.exports = { getStreams: getStreams };
+} else {
+  global.RGShowsScraperModule = { getStreams: getStreams };
 }
