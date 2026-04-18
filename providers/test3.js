@@ -1,91 +1,77 @@
-// RGShows Scraper - Updated for VidPlus/Videasy Infrastructure
 const TMDB_API_KEY = "20bf0a5cbc307e7889137457fa5b6b37";
 const RGSHOWS_BASE = "api.rgshows.ru";
 
-// These are the "Magic Headers" that allow the stream to play
-const WORKING_HEADERS = {
+// Headers needed to talk to the API
+const API_HEADERS = {
+  "Referer": "https://rgshows.ru/",
+  "Origin": "https://rgshows.ru",
+  "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+};
+
+// Headers needed for the Player to work with VidPlus
+const PLAYER_HEADERS = {
   "Origin": "https://player.videasy.net",
   "Referer": "https://player.videasy.net/",
   "sec-ch-ua": '"Chromium";v="146", "Not-A.Brand";v="24", "Android WebView";v="146"',
   "sec-ch-ua-mobile": "?1",
   "sec-ch-ua-platform": '"Android"',
-  "User-Agent": "Mozilla/5.0 (Linux; Android 15; ALT-NX1 Build/HONORALT-N31; wv) AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 Chrome/146.0.7680.177 Mobile Safari/537.36",
-  "Accept": "*/*",
-  "Accept-Encoding": "identity;q=1, *;q=0"
+  "User-Agent": "Mozilla/5.0 (Linux; Android 15; ALT-NX1 Build/HONORALT-N31; wv) AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 Chrome/146.0.7680.177 Mobile Safari/537.36"
 };
 
-function makeRequest(url, options) {
-  options = options || {};
-  var headers = Object.assign({}, WORKING_HEADERS); // Use the working set by default
-  
-  if (options.headers) {
-    Object.keys(options.headers).forEach(function(k) { headers[k] = options.headers[k]; });
-  }
-
+function makeRequest(url, headers) {
   return fetch(url, {
-    method: options.method || "GET",
-    headers: headers
+    method: "GET",
+    headers: headers || API_HEADERS
   }).then(function(response) {
     if (!response.ok) throw new Error("HTTP " + response.status);
-    return response;
+    return response.json();
   });
-}
-
-function getTmdbInfo(tmdbId, mediaType) {
-  var url = "https://api.themoviedb.org/3/" + (mediaType === "tv" ? "tv" : "movie") + "/" + tmdbId + "?api_key=" + TMDB_API_KEY;
-  return makeRequest(url)
-    .then(function(r) { return r.json(); })
-    .then(function(data) {
-      return { 
-        title: mediaType === "tv" ? data.name : data.title, 
-        year: (mediaType === "tv" ? (data.first_air_date || "") : (data.release_date || "")).substring(0, 4) 
-      };
-    });
 }
 
 function getStreams(tmdbId, mediaType, seasonNum, episodeNum) {
   mediaType = mediaType || "movie";
-  console.log("[RGShows] Fetching TMDB ID: " + tmdbId);
+  console.log("[RGShows] Starting fetch for ID: " + tmdbId);
 
-  return getTmdbInfo(tmdbId, mediaType)
-    .then(function(info) {
-      var url = "https://" + RGSHOWS_BASE + "/main/" + (mediaType === "movie" ? "movie/" + tmdbId : "tv/" + tmdbId + "/" + seasonNum + "/" + episodeNum);
+  var tmdbUrl = "https://api.themoviedb.org/3/" + (mediaType === "tv" ? "tv" : "movie") + "/" + tmdbId + "?api_key=" + TMDB_API_KEY;
 
-      return makeRequest(url)
-        .then(function(r) { return r.json(); })
+  return makeRequest(tmdbUrl, {}) // TMDB doesn't need special headers
+    .then(function(tmdbData) {
+      var title = mediaType === "tv" ? tmdbData.name : tmdbData.title;
+      var path = mediaType === "movie" ? "/movie/" + tmdbId : "/tv/" + tmdbId + "/" + seasonNum + "/" + episodeNum;
+      var apiUrl = "https://" + RGSHOWS_BASE + "/main" + path;
+
+      console.log("[RGShows] Requesting API: " + apiUrl);
+
+      return makeRequest(apiUrl, API_HEADERS)
         .then(function(data) {
           if (!data || !data.stream || !data.stream.url) {
-            console.log("[RGShows] No stream URL in response");
+            console.log("[RGShows] API returned success but no stream URL");
             return [];
           }
 
           var streamUrl = data.stream.url;
-          
-          // Construct the label for the UI
-          var label = (mediaType === "tv") 
-            ? info.title + " S" + String(seasonNum).padStart(2, "0") + "E" + String(episodeNum).padStart(2, "0")
-            : info.title + (info.year ? " (" + info.year + ")" : "");
+          console.log("[RGShows] Successfully found URL: " + streamUrl.substring(0, 30) + "...");
 
-          console.log("[RGShows] Link found, applying VidPlus headers");
+          var label = (mediaType === "tv") 
+            ? title + " S" + String(seasonNum).padStart(2, "0") + "E" + String(episodeNum).padStart(2, "0")
+            : title;
 
           return [{
-            name: "RGShows (VidPlus)",
+            name: "RGShows (Hybrid)",
             title: label,
             url: streamUrl,
             quality: "Auto",
-            headers: WORKING_HEADERS, // Player needs these to avoid 22004
+            headers: PLAYER_HEADERS, // Pass the VidPlus headers to the player
             provider: "rgshows"
           }];
         });
     })
     .catch(function(err) {
-      console.error("[RGShows] Scraper Error: " + err.message);
+      console.error("[RGShows] Critical Error: " + err.message);
       return [];
     });
 }
 
 if (typeof module !== "undefined" && module.exports) {
   module.exports = { getStreams: getStreams };
-} else {
-  global.RGShowsScraperModule = { getStreams: getStreams };
 }
