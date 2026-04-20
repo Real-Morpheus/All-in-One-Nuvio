@@ -6,9 +6,9 @@
 //       xalaflix et darkibox acceptent leurs propres domaines
 // =============================================================
 
-var NAKIOS_API     = 'https://api.nakios.art/api';
-var NAKIOS_BASE    = 'https://nakios.art';
-var NAKIOS_REFERER = 'https://nakios.art/';
+var NAKIOS_API     = 'https://api.nakios.fit/api';
+var NAKIOS_BASE    = 'https://nakios.fit';
+var NAKIOS_REFERER = 'https://nakios.fit/';
 var NAKIOS_UA      = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
 
 function fetchSources(tmdbId, mediaType, season, episode) {
