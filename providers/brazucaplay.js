@@ -19,7 +19,7 @@ const SERVERS = {
     language: 'Português'},
   'Overflix': {url: 'https://api2.videasy.net/overflix/sources-with-title',
     language: 'Português'},
-  'Kayo': {url: 'https://api2.videasy.net/cuevana-spanish/sources-with-title, 
+  'Kayo': {url: 'https://api2.videasy.net/cuevana-spanish/sources-with-title',
     language: 'Spanish'},
   'VisãoCine': {url: 'https://api.videasy.net/visioncine/sources-with-title',
     language: 'Português'}
