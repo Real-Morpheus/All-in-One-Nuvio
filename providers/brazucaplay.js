@@ -9,7 +9,7 @@ const HEADERS = {
   'Connection': 'keep-alive'
 };
 
-const API = 'https://enc-dec.app/api';
+const API = 'https://enc-dec.app/api/dec-videasy';
 const TMDB_API_KEY = 'd131017ccc6e5462a81c9304d21476de';
 const TMDB_BASE_URL = 'https://api.themoviedb.org/3';
 
