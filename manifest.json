@@ -513,7 +513,7 @@
     {
       "id": "multivid",
       "name": "MultiVid",
-      "description": "MultiVid - Includes VidEasy, VidLink & VidSrc",
+      "description": "MultiVid - Includes VidEasy, VidLink, VidMody & VidSrc",
       "version": "1.0.0",
       "author": "Nuvio Team",
       "supportedTypes": ["movie", "tv"],
