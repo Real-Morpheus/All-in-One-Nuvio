@@ -17,6 +17,7 @@ const SERVERS = {
   'Omen': { url: 'https://api.videasy.net/onionplay/sources-with-title' },
   'Breach': { url: 'https://api.videasy.net/m4uhd/sources-with-title' },
   'Ghost': { url: 'https://api.videasy.net/primesrcme/sources-with-title' },
+  'Sage': { url: 'https://api.videasy.net/1movies/sources-with-title' },
   'Vyse': {url: 'https://api.videasy.net/hdmovie/sources-with-title' },
   'Raze': { url: 'https://api.videasy.net/superflix/sources-with-title' } // Raze often rotates URLs
 };
