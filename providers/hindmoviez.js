@@ -14,7 +14,7 @@
  * ╚══════════════════════════════════════════════════════════════════════════════╝
  */
 
- *   'use strict';
+'use strict';
 
 var BASE_URL     = 'https://hindmovie.ltd';
 var TMDB_API_KEY = '439c478a771f35c05022f9feabcca01c';
