@@ -546,7 +546,7 @@
       "filename": "providers/vidlink.js",
       "enabled": true,
       "formats": ["mp4", "m3u8"],
-      "logo": "https://i.postimg.cc/wMHSw2Vb/vidlink.png",
+      "logo": "https://i.postimg.cc/RZRHQd75/vidlink.png",
       "contentLanguage": ["en"]
     },
     {
