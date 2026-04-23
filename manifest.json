@@ -494,7 +494,7 @@
       "filename": "providers/toflix.js",
       "enabled": true,
       "formats": ["mp4", "m3u8"],
-      "logo": "https://i.postimg.cc/HkFFqm55/toflix.png",
+      "logo": "https://i.postimg.cc/yNxJYqkv/toflix.png",
       "contentLanguage": ["en", "fr"]
     },
     {
