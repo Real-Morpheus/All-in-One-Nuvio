@@ -1,6 +1,6 @@
 // ============================================================
 // Provider Nuvio : Anime-Sama (anime-sama.to)
-// Version      : 7.0.1 - domaine par défaut anime-sama.si
+// Version      : 7.0.3 - sibnet chemin relatif corrige
 // Moteur       : Promise chains UNIQUEMENT (Hermes / React Native)
 // Langues      : VF priorité, fallback VOSTFR
 // Sources      : epsAS (MP4 direct) > sendvid > vidmoly > sibnet > oneupload
@@ -272,9 +272,18 @@ function extractSendvid(embedUrl) {
 
 // sibnet : cherche mp4 dans le HTML
 function extractSibnet(shellUrl) {
-  return getText(shellUrl, 'https://video.sibnet.ru/').then(function(html) {
-    var m = /["'](https?:\/\/[^"']+\.mp4[^"']*)["']/i.exec(html);
-    return m ? m[1] : null;
+  return fetch(shellUrl, {
+    headers: {
+      'User-Agent': UA,
+      'Referer': 'https://anime-sama.to/',
+      'Accept': 'text/html'
+    }
+  }).then(function(r) { return r.text(); })
+  .then(function(html) {
+    // sibnet retourne src: "/v/HASH/ID.mp4" (chemin relatif)
+    var m = /srcs*:s*['"](/v/[^'"]+.mp4)['"]/.exec(html);
+    if (m) return 'https://video.sibnet.ru' + m[1];
+    return null;
   }).catch(function() { return null; });
 }
 
@@ -300,13 +309,31 @@ function extractOneupload(embedUrl) {
   }).catch(function() { return null; });
 }
 
+// Valide qu'une URL directe répond bien (HEAD request avec timeout 5s)
+function validateDirectUrl(url) {
+  var timeout = new Promise(function(_, reject) {
+    setTimeout(function() { reject(new Error('timeout')); }, 5000);
+  });
+  var check = fetch(url, {
+    method: 'HEAD',
+    headers: { 'User-Agent': UA, 'Referer': AS_REF }
+  }).then(function(r) { return r.ok; }).catch(function() { return false; });
+  return Promise.race([check, timeout]).catch(function() { return false; });
+}
+
 // Dispatch → { url, fmt } | null
 function extractUrl(embedUrl) {
-  // URL directe mp4/m3u8 (epsAS)
+  // URL directe mp4/m3u8 (epsAS) — on valide qu'elle répond
   if (/\.(mp4|m3u8)(\?|$)/i.test(embedUrl)) {
-    return Promise.resolve({
-      url: embedUrl,
-      fmt: embedUrl.indexOf('.m3u8') !== -1 ? 'm3u8' : 'mp4'
+    return validateDirectUrl(embedUrl).then(function(ok) {
+      if (!ok) {
+        console.warn('[AnimeSama] epsAS inaccessible:', embedUrl);
+        return null;
+      }
+      return {
+        url: embedUrl,
+        fmt: embedUrl.indexOf('.m3u8') !== -1 ? 'm3u8' : 'mp4'
+      };
     });
   }
   if (embedUrl.indexOf('sendvid.com') !== -1) {
@@ -364,7 +391,12 @@ function buildStreams(epsData, epIndex, season, episode) {
         title:   flag + ' ' + (LABELS[key] || key) + ' | S' + season + 'E' + episode,
         url:     res.url,
         quality: res.fmt === 'm3u8' ? 'HD' : 'Auto',
-        headers: { 'User-Agent': UA, 'Referer': AS_REF },
+        format:  res.fmt,
+        headers: {
+          'User-Agent': UA,
+          'Referer': AS_REF,
+          'Origin': AS_BASE
+        },
         _prio:   PRIO[key] || 30
       };
     }).catch(function() { return null; });
