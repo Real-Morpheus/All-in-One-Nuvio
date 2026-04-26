@@ -1,6 +1,7 @@
 // =============================================================
 // Provider Nuvio : Purstream.art (VF/VOSTFR/MULTI français)
-// Version : 3.3.0
+// Version : 3.4.0
+// Fix : vérification année de sortie pour éviter les homonymes
 // Domaine récupéré depuis domains.json (GitHub)
 // Fallback : purstream.wiki puis Telegram
 // =============================================================
@@ -109,7 +110,16 @@ function cleanTitle(s) {
 }
 
 // ---------------------------------------------------------------
-// Étape 1 : tmdbId → titres FR + original via TMDB
+// Extraire l'année depuis une date "2021-11-12 00:00:00" ou "2021"
+// ---------------------------------------------------------------
+function extractYear(dateStr) {
+  if (!dateStr) return null;
+  var m = String(dateStr).match(/(\d{4})/);
+  return m ? parseInt(m[1], 10) : null;
+}
+
+// ---------------------------------------------------------------
+// Étape 1 : tmdbId → titres FR + original + année via TMDB
 // ---------------------------------------------------------------
 function getTitleFromTmdb(tmdbId, mediaType) {
   var type = mediaType === 'tv' ? 'tv' : 'movie';
@@ -127,17 +137,24 @@ function getTitleFromTmdb(tmdbId, mediaType) {
       var titleFr   = data.title || data.name || '';
       var titleOrig = data.original_title || data.original_name || '';
       if (!titleFr && !titleOrig) throw new Error('Aucun titre TMDB');
-      console.log('[Purstream] Titres TMDB: FR=' + titleFr + ' ORIG=' + titleOrig);
-      return { fr: titleFr, orig: titleOrig };
+
+      // Année de sortie : release_date pour films, first_air_date pour séries
+      var dateStr = data.release_date || data.first_air_date || '';
+      var year    = extractYear(dateStr);
+
+      console.log('[Purstream] TMDB: FR="' + titleFr + '" ORIG="' + titleOrig + '" année=' + year);
+      return { fr: titleFr, orig: titleOrig, year: year };
     });
 }
 
 // ---------------------------------------------------------------
-// Étape 2 : recherche purstream par titre
-// Retourne l'ID UNIQUEMENT si un résultat correspond exactement
-// au titre cherché — sinon lance une erreur (pas de faux positif)
+// Étape 2 : recherche purstream par titre + vérification année
+// - Match exact sur le titre (nettoyé)
+// - Si plusieurs résultats avec le même titre → vérifier l'année
+// - Tolérance ±1 an (post-prod, sorties décalées)
+// - Si aucun match → erreur (pas de faux positif)
 // ---------------------------------------------------------------
-function findPurstreamIdByTitle(title, mediaType) {
+function findPurstreamIdByTitle(title, mediaType, tmdbYear) {
   if (!title) throw new Error('Titre vide');
   var encoded = encodeURIComponent(title);
   var url = PURSTREAM_API + '/search-bar/search/' + encoded;
@@ -163,51 +180,84 @@ function findPurstreamIdByTitle(title, mediaType) {
         ? data.data.items.movies.items
         : [];
 
-      // Aucun résultat → le contenu n'existe pas sur purstream
       if (items.length === 0) throw new Error('Absent de purstream: ' + title);
 
-      var targetType = mediaType === 'tv' ? 'tv' : 'movie';
+      var targetType  = mediaType === 'tv' ? 'tv' : 'movie';
       var cleanTarget = cleanTitle(title);
 
-      // 1. Match exact titre nettoyé + bon type
+      // Garder uniquement les items dont le titre correspond exactement
+      var titleMatches = [];
       for (var i = 0; i < items.length; i++) {
-        var item = items[i];
-        if (item.type === targetType && cleanTitle(item.title) === cleanTarget) {
-          console.log('[Purstream] Match exact (type+titre): id=' + item.id + ' "' + item.title + '"');
+        if (cleanTitle(items[i].title) === cleanTarget) {
+          titleMatches.push(items[i]);
+        }
+      }
+
+      if (titleMatches.length === 0) throw new Error('Pas de match exact pour: ' + title);
+
+      // Un seul match → on le prend directement (pas besoin de vérifier l'année)
+      if (titleMatches.length === 1) {
+        // Vérification année quand même si on a l'info des deux côtés
+        var item = titleMatches[0];
+        var purYear = extractYear(item.release_date);
+        if (tmdbYear && purYear && Math.abs(tmdbYear - purYear) > 1) {
+          throw new Error('Année incorrecte: TMDB=' + tmdbYear + ' purstream=' + purYear + ' pour "' + title + '"');
+        }
+        console.log('[Purstream] Match unique: id=' + item.id + ' "' + item.title + '" (' + purYear + ')');
+        return item.id;
+      }
+
+      // Plusieurs matchs de titre → utiliser l'année pour départager
+      console.log('[Purstream] ' + titleMatches.length + ' matchs pour "' + title + '", départage par année (TMDB=' + tmdbYear + ')');
+
+      // Priorité 1 : bon type + bonne année
+      for (var i = 0; i < titleMatches.length; i++) {
+        var item = titleMatches[i];
+        var purYear = extractYear(item.release_date);
+        if (item.type === targetType && tmdbYear && purYear && Math.abs(tmdbYear - purYear) <= 1) {
+          console.log('[Purstream] Match type+année: id=' + item.id + ' (' + purYear + ')');
           return item.id;
         }
       }
 
-      // 2. Match exact titre nettoyé (type ignoré — purstream peut mal typer)
-      for (var i = 0; i < items.length; i++) {
-        var item = items[i];
-        if (cleanTitle(item.title) === cleanTarget) {
-          console.log('[Purstream] Match exact (titre seul): id=' + item.id + ' "' + item.title + '"');
+      // Priorité 2 : bonne année (type ignoré)
+      for (var i = 0; i < titleMatches.length; i++) {
+        var item = titleMatches[i];
+        var purYear = extractYear(item.release_date);
+        if (tmdbYear && purYear && Math.abs(tmdbYear - purYear) <= 1) {
+          console.log('[Purstream] Match année seule: id=' + item.id + ' (' + purYear + ')');
           return item.id;
         }
       }
 
-      // Aucun match exact → on refuse pour éviter les faux positifs
-      throw new Error('Pas de match exact pour: ' + title);
+      // Priorité 3 : bon type sans vérification année (pas d'info année)
+      for (var i = 0; i < titleMatches.length; i++) {
+        if (titleMatches[i].type === targetType) {
+          console.log('[Purstream] Match type seul: id=' + titleMatches[i].id);
+          return titleMatches[i].id;
+        }
+      }
+
+      // Dernier recours : premier match de titre
+      console.log('[Purstream] Match titre (premier): id=' + titleMatches[0].id);
+      return titleMatches[0].id;
     });
 }
 
 // ---------------------------------------------------------------
 // Étape 1+2 : tmdbId → purstreamId
-// Essaie titre FR, puis titre original
-// Si aucun des deux ne donne un match exact → erreur (→ [] final)
+// Essaie titre FR, puis titre original si différent
 // ---------------------------------------------------------------
 function findPurstreamId(tmdbId, mediaType) {
   return getTitleFromTmdb(tmdbId, mediaType)
     .then(function(titles) {
-      return findPurstreamIdByTitle(titles.fr, mediaType)
+      return findPurstreamIdByTitle(titles.fr, mediaType, titles.year)
         .catch(function(errFr) {
-          // Seulement si le titre original est différent du titre FR
           if (!titles.orig || cleanTitle(titles.orig) === cleanTitle(titles.fr)) {
             throw errFr;
           }
           console.log('[Purstream] Titre FR sans match ("' + titles.fr + '"), essai titre original: ' + titles.orig);
-          return findPurstreamIdByTitle(titles.orig, mediaType);
+          return findPurstreamIdByTitle(titles.orig, mediaType, titles.year);
         });
     });
 }
