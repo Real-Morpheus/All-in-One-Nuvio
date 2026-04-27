@@ -1,4 +1,4 @@
-// Dahmer Movies Scraper - Direct Link Fix (No Bulk Prefix)
+// Dahmer Movies Scraper - Direct Link Fix (TV Season Support)
 console.log('[DahmerMovies] Initializing Scraper');
 
 const TMDB_API_KEY = "439c478a771f35c05022f9feabcca01c";
@@ -13,7 +13,6 @@ async function makeRequest(url) {
 }
 
 async function resolveFinalUrl(startUrl) {
-    // If the URL contains the bulk redirector, extract only the part after 'u='
     let cleanUrl = startUrl;
     if (startUrl.includes('/bulk?u=')) {
         cleanUrl = decodeURIComponent(startUrl.split('u=')[1]);
@@ -52,18 +51,40 @@ function parseLinks(html) {
 
 async function invokeDahmerMovies(title, year, season = null, episode = null) {
     const cleanTitle = title.replace(/:/g, '');
-    const folderName = season === null ? `${cleanTitle} (${year})` : cleanTitle;
-    const baseDir = season === null ? `/movies/` : `/tvs/`;
-    const folderPath = `${baseDir}${encodeURIComponent(folderName)}/`;
-    const fullDirUrl = DAHMER_MOVIES_API + folderPath;
-
-    const response = await makeRequest(fullDirUrl);
-    if (!response.ok) return [];
     
-    const html = await response.text();
+    // Check multiple TV folder possibilities (Season 01 vs Season 1)
+    const folderVariants = season !== null ? [
+        `/tvs/${encodeURIComponent(cleanTitle)}/Season%20${season < 10 ? '0' + season : season}/`,
+        `/tvs/${encodeURIComponent(cleanTitle)}/Season%20${season}/`
+    ] : [`/movies/${encodeURIComponent(cleanTitle + ' (' + year + ')')}/`];
+
+    let html = '';
+    let activeDirUrl = '';
+
+    // Loop through variants to find the one that actually contains the files
+    for (const path of folderVariants) {
+        const fullDirUrl = DAHMER_MOVIES_API + path;
+        const response = await makeRequest(fullDirUrl);
+        if (response.ok) {
+            html = await response.text();
+            activeDirUrl = fullDirUrl;
+            break; 
+        }
+    }
+
+    if (!html) return [];
+    
     const paths = parseLinks(html);
 
-    const sortedPaths = paths.sort((a, b) => {
+    // If it's a TV show, filter for the specific episode number
+    let filteredPaths = paths;
+    if (season !== null && episode !== null) {
+        const e = episode < 10 ? `0${episode}` : episode;
+        const pattern = new RegExp(`E${e}|E${episode}`, 'i');
+        filteredPaths = paths.filter(p => pattern.test(p.text));
+    }
+
+    const sortedPaths = filteredPaths.sort((a, b) => {
         const a4k = /2160p|4k/i.test(a.text);
         const b4k = /2160p|4k/i.test(b.text);
         return b4k - a4k;
@@ -73,19 +94,15 @@ async function invokeDahmerMovies(title, year, season = null, episode = null) {
     for (const path of sortedPaths.slice(0, 5)) {
         let finalUrl;
 
-        // Logic to prevent doubling and strip redirectors
         if (path.href.startsWith('http')) {
             finalUrl = path.href;
         } else if (path.href.includes('/movies/') || path.href.includes('/tvs/')) {
             finalUrl = DAHMER_MOVIES_API + (path.href.startsWith('/') ? '' : '/') + path.href;
         } else {
-            finalUrl = fullDirUrl + path.href;
+            finalUrl = activeDirUrl + path.href;
         }
 
-        // Clean double slashes
         finalUrl = finalUrl.replace(/([^:]\/)\/+/g, "$1");
-        
-        // Resolve and strip the 'bulk?u=' prefix if present
         const streamUrl = await resolveFinalUrl(finalUrl);
 
         results.push({
