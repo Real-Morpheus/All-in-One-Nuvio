@@ -457,7 +457,9 @@
       "formats": ["mp4", "mkv", "m3u8"],
       "logo": "https://i.postimg.cc/KzjPtYWY/imdb.png",
       "contentLanguage": ["en", "hi"]
-    },
+    }
+  ],
+  "providers": [
     { 
       "id": "playimdb",
       "name": "PlayIMDb (Movies)",
