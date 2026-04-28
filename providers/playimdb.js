@@ -143,18 +143,27 @@ async function resolveDirectStreams(media, type, season, episode) {
                 const urls = decJson && Array.isArray(decJson.result) ? [...new Set(decJson.result)] : [];
 
                 if (urls.length > 0) {
-                    return urls.map((url, idx) => {
+                    const streams = [];
+                    const seenKeys = new Set();
+                    
+                    for (const url of urls) {
                         const quality = toQualityLabel(url);
                         const lang = detectLanguage(url);
-                        return {
-                            name: `${movieTitle} | ${quality} | Server ${idx + 1}`,
-                            title: `${mediaTitle}\n[${lang}] Direct Stream`,
-                            url: url,
-                            quality: quality,
-                            headers: { Referer: 'https://cloudnestra.com/' },
-                            provider: 'playimdb'
-                        };
-                    });
+                        
+                        const dedupKey = `${quality}-${lang}`;
+                        if (!seenKeys.has(dedupKey)) {
+                            seenKeys.add(dedupKey);
+                            streams.push({
+                                name: `${movieTitle} | ${quality} | Server ${streams.length + 1}`,
+                                title: `${mediaTitle}\n[${lang}] Direct Stream`,
+                                url: url,
+                                quality: quality,
+                                headers: { Referer: 'https://cloudnestra.com/' },
+                                provider: 'playimdb'
+                            });
+                        }
+                    }
+                    return streams;
                 }
             }
         }
