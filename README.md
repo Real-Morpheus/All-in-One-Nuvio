@@ -22,7 +22,6 @@ A collection of high-quality local scrapers for the Nuvio streaming application.
 [![castle.png](https://i.postimg.cc/4yqkvYvX/castle.png)](https://postimg.cc/gLVTmkB7) Castle | 🏴󠁧󠁢󠁥󠁮󠁧󠁿  | Film & Serial | 1080p / 720p | ✅ | ✅ |
 [![dhamermovies.png](https://i.postimg.cc/jdZ9VgDq/dhamermovies.png)](https://postimg.cc/svGK7JPb) Dahmermovies | 🏴󠁧󠁢󠁥󠁮󠁧󠁿  | Film & Serial | 4K / 1080p / 720p | ✅ | ✅ |
 [![dooflix.png](https://i.postimg.cc/B6Q28JSt/dooflix.png)](https://postimg.cc/Y4ZvZKmw)  DooFlix | 🏴󠁧󠁢󠁥󠁮󠁧󠁿 🇮🇳 | Film & Serial | 1080p / 720p | ✅ | ✅ |
-[![dramafull.png](https://i.postimg.cc/rwKGYQ6C/dramafull.png)](https://postimg.cc/hXR7X8tf) DramaFull | 🏴󠁧󠁢󠁥󠁮󠁧󠁿 🇨🇳 🇯🇵 🇰🇷 | Asian Drama/Movies | 1080p / 720p | ✅ | ❌ |
 | [![download-(2).png](https://i.postimg.cc/cJ6s6jq8/download-(2).png)](https://postimg.cc/CZTyQcxF) HDHub4U | 🏴󠁧󠁢󠁥󠁮󠁧󠁿 🇮🇳 | Film & Serial | 4K / 1080p / 720p | ✅ | ✅ |
 | [![kisskh.png](https://i.postimg.cc/Qdwzkn9d/kisskh.png)](https://postimg.cc/K17QmfD6) KissKH | 🇰🇷 🇨🇳 🇯🇵 | Asian Movies / Drama | 1080p / 720p | ✅ | ✅ |
 [![moviesdrive.png](https://i.postimg.cc/PrKhFqtK/moviesdrive.png)](https://postimg.cc/56HZXbQF) MoviesDrive | 🏴󠁧󠁢󠁥󠁮󠁧󠁿 | Film & Serial | 4K / 1080p / 720p | ✅ | ✅ |
