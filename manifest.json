@@ -652,19 +652,6 @@
       "formats": ["mp4", "m3u8"],
       "logo": "https://i.postimg.cc/2yLnTzPP/kisskh.jpg",
       "contentLanguage": ["ko", "ch", "ja", "th"]
-    },
-    {
-      "id": "dramafull",
-      "name": "DramaFull",
-      "description": "DramaFull provider for Nuvio. Specializes in Asian dramas.",
-      "version": "1.0.0",
-      "author": "User",
-      "supportedTypes": ["movie", "tv"],
-      "filename": "src/providers/dramafull.js",
-      "enabled": true,
-      "formats": ["mp4", "mkv", "m3u8"],
-      "logo": "https://dramafull.cc/favicon.ico",
-      "contentLanguage": ["en", "ko", "zh", "ja"] 
     }
   ]
 }
