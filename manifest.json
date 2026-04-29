@@ -526,28 +526,15 @@
     {
       "id": "streamflix",
       "name": "StreamFlix",
-      "description": "Direct links via StreamFlix in Hindi",
-      "version": "1.0.0",
-      "author": "Nuvio Team",
+      "description": "1080p Movies in Multi-Lang",
+      "version": "2.0.0",
+      "author": "Kabir",
       "supportedTypes": ["movie", "tv"],
       "filename": "providers/streamflix.js",
       "enabled": true,
       "formats": ["mp4", "m3u8"],
       "logo": "https://i.postimg.cc/4yVjQjpH/streamflix.png",
-      "contentLanguage": ["en"] 
-    },
-    {
-      "id": "streamflixen",
-      "name": "StreamFlix-En",
-      "description": "Direct links via StreamFlix in English",
-      "version": "1.0.0",
-      "author": "Nuvio Team",
-      "supportedTypes": ["movie", "tv"],
-      "filename": "providers/streamflix_eng.js",
-      "enabled": true,
-      "formats": ["mp4", "m3u8"],
-      "logo": "https://i.postimg.cc/4yVjQjpH/streamflix.png",
-      "contentLanguage": ["en"]
+      "contentLanguage": ["en", "hi", "ta"] 
     },
     {
       "id": "toflix",
