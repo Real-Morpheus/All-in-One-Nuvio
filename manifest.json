@@ -628,6 +628,19 @@
       "contentLanguage": ["ko"]
     },
     {
+      "id": "onetouchtv",
+      "name": "OneTouchTV",
+      "description": "Watch Asian Drama & Anime",
+      "version": "1.0.0",
+      "author": "Kabir",
+      "supportedTypes": ["movie", "tv"],
+      "filename": "providers/onetouchtv.js",
+      "enabled": true,
+      "formats": ["mp4", "mkv", "m3u8"],
+      "logo": "https://i.postimg.cc/dtX84Gqc/onlykdrama.jpg",
+      "contentLanguage": ["en", "ko", "ja", "zh"]
+    },
+    {
       "id": "kisskh",
       "name": "Kisskh",
       "description": "Streams Korean dramas and movies from onlykdrama.top",
