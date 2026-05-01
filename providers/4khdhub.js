@@ -78,7 +78,7 @@ var DOMAINS_URL = "https://raw.githubusercontent.com/phisher98/TVVVV/refs/heads/
 var TMDB_API_KEY = "439c478a771f35c05022f9feabcca01c";
 var DEFAULT_MAIN_URL = "https://4khdhub.dad";
 var HEADERS = {
-  "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36";
+  "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36",
   "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
   "Accept-Language": "en-US,en;q=0.9,tr-TR;q=0.8,tr;q=0.7"
 };
