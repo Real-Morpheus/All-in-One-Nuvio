@@ -1,6 +1,6 @@
 /**
  * 4KHDHub - Built from src/4KHDHub/
- * Final Polish: Fingerprint-based Deduplication & post-resolve filtering
+ * Final Polish: Updated User-Agent for Mobile/Desktop compatibility
  */
 var __create = Object.create;
 var __defProp = Object.defineProperty;
@@ -77,11 +77,16 @@ var import_cheerio_without_node_native2 = __toESM(require("cheerio-without-node-
 var DOMAINS_URL = "https://raw.githubusercontent.com/phisher98/TVVVV/refs/heads/main/domains.json";
 var TMDB_API_KEY = "439c478a771f35c05022f9feabcca01c";
 var DEFAULT_MAIN_URL = "https://4khdhub.dad";
+
+// AMENDED: Modernized User-Agent and headers to prevent mobile blocking
 var HEADERS = {
-  "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36",
-  "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-  "Accept-Language": "en-US,en;q=0.9,tr-TR;q=0.8,tr;q=0.7"
+  "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+  "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
+  "Accept-Language": "en-US,en;q=0.9",
+  "Connection": "keep-alive",
+  "Upgrade-Insecure-Requests": "1"
 };
+
 var cachedDomains = null;
 function getDomains() {
   return __async(this, null, function* () {
@@ -145,10 +150,7 @@ function getTmdbTitle(tmdbId, mediaType) {
       const type = mediaType === "movie" ? "movie" : "tv";
       const url = `https://www.themoviedb.org/${type}/${tmdbId}?language=tr-TR`;
       const response = yield fetch(url, {
-        headers: {
-          "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
-          "Accept-Language": "tr-TR,tr;q=0.9,en-US;q=0.8,en;q=0.7"
-        }
+        headers: HEADERS
       });
       if (!response.ok) {
         throw new Error(`TMDB HTML fetch error: ${response.status}`);
@@ -198,11 +200,9 @@ function getTmdbTitle(tmdbId, mediaType) {
 var PROVIDER_NAME = "4KHDHub";
 var REDIRECT_REGEX = /s\('o','([A-Za-z0-9+/=]+)'|ck\('_wp_http_\d+','([^']+)'/g;
 
-/** UPDATED: Metadata-based Deduplication **/
 function dedupeStreams(streams) {
   const seenFingerprints = new Set();
   return streams.filter((stream) => {
-    // If two streams have the same title (Quality | Lang | Size | Tech), they are effectively duplicates
     const fingerprint = `${stream.title}|${stream.quality}`.toLowerCase().replace(/\s/g, "");
     if (seenFingerprints.has(fingerprint)) return false;
     seenFingerprints.add(fingerprint);
@@ -270,7 +270,7 @@ function parseQuality(text) {
 
 function cleanFileDetails(title) {
   const normalized = (title || "").replace(/\.[a-z0-9]{2,4}$/i, "").replace(/WEB[-_. ]?DL/gi, "WEB-DL").replace(/WEB[-_. ]?RIP/gi, "WEBRIP").replace(/H[ .]?265/gi, "H265").replace(/H[ .]?264/gi, "H264").replace(/DDP[ .]?([0-9]\.[0-9])/gi, "DDP$1");
-  const allowed = /* @__PURE__ */ new Set([
+  const allowed = new Set([
     "WEB-DL", "WEBRIP", "BLURAY", "HDRIP", "DVDRIP", "HDTV", "CAM", "TS", "BRRIP", "BDRIP", "H264", "H265", "X264", "X265", "HEVC", "AVC", "AAC", "AC3", "DTS", "MP3", "FLAC", "DD", "ATMOS", "HDR", "HDR10", "HDR10+", "DV", "DOLBYVISION", "NF", "CR", "SDR"
   ]);
   const parts = normalized.split(/[ ._]+/).map((part) => part.toUpperCase());
@@ -513,7 +513,6 @@ function extractStreams(tmdbId, mediaType, season, episode) {
       const resolved = yield resolveLink(linkItem.url, linkItem.label || PROVIDER_NAME, contentUrl, quality);
       
       for (const stream of resolved) {
-        // Double Check URL uniqueness before adding
         const pureUrl = stream.url.split('#')[0].toLowerCase();
         if (!resolvedUrls.has(pureUrl)) {
           resolvedUrls.add(pureUrl);
@@ -521,7 +520,6 @@ function extractStreams(tmdbId, mediaType, season, episode) {
         }
       }
     }
-    // Final pass to dedupe by metadata fingerprint
     return dedupeStreams(allStreams);
   });
 }
