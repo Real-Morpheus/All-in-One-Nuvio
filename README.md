@@ -19,10 +19,10 @@ A collection of high-quality local scrapers for the Nuvio streaming application.
 | [![4khdhub.png](https://i.postimg.cc/Z5B7RF79/4khdhub.png)](https://postimg.cc/21YF9vfm) 4KHDHub | 🏴󠁧󠁢󠁥󠁮󠁧󠁿 🇮🇳 | Film & Serial | 4K / 1080p / 720p | ✅ | ✅ |
 | [![animekai.png](https://i.postimg.cc/cLCqcnFV/animekai.png)](https://postimg.cc/9r6Nmr5p) AnimeKai | 🏴󠁧󠁢󠁥󠁮󠁧󠁿 🇯🇵 | Anime | 1080p / 720p | ✅ | ✅ |
 [![animepahe.png](https://i.postimg.cc/SKQFpzFY/animepahe.png)](https://postimg.cc/MnLr7HGz) AnimePahe | 🏴󠁧󠁢󠁥󠁮󠁧󠁿 🇯🇵 | Anime | 1080p / 720p | ✅ | ✅ |
-| [![allwish.png](https://i.postimg.cc/sgPDCG12/allwish.png)](https://postimg.cc/jD5rz5HV) AllWish | 🏴󠁧󠁢󠁥󠁮󠁧󠁿 🇯🇵 | 1080p / 720p | ✅ | ✅ |
-| [![animesalt.png](https://i.postimg.cc/Bn5QfPtt/animesalt.png)](https://postimg.cc/TKwXrwVX) AnimeSalt | 🏴󠁧󠁢󠁥󠁮󠁧󠁿 🇮🇳 | 1080p / 720p | ✅ | ✅ |
-| [![animesama.png](https://i.postimg.cc/nhKcf9Mz/animesama.png)](https://postimg.cc/qNRd8RsV) AnimeSama | 🇫🇷 | 1080p / 720p | ✅ | ✅ |
-| [![animeworld.png](https://i.postimg.cc/8zdPgfsc/animeworld.png)](https://postimg.cc/cvHNQHRG) AnimeWorld | 🏴󠁧󠁢󠁥󠁮󠁧󠁿 🇮🇳 | 1080p / 720p | ✅ | ✅ |
+| [![allwish.png](https://i.postimg.cc/sgPDCG12/allwish.png)](https://postimg.cc/jD5rz5HV) AllWish | 🏴󠁧󠁢󠁥󠁮󠁧󠁿 🇯🇵 | Anime | 1080p / 720p | ✅ | ✅ |
+| [![animesalt.png](https://i.postimg.cc/Bn5QfPtt/animesalt.png)](https://postimg.cc/TKwXrwVX) AnimeSalt | 🏴󠁧󠁢󠁥󠁮󠁧󠁿 🇮🇳 | Anime | 1080p / 720p | ✅ | ✅ |
+| [![animesama.png](https://i.postimg.cc/nhKcf9Mz/animesama.png)](https://postimg.cc/qNRd8RsV) AnimeSama | 🇫🇷 | Anime | 1080p / 720p | ✅ | ✅ |
+| [![animeworld.png](https://i.postimg.cc/8zdPgfsc/animeworld.png)](https://postimg.cc/cvHNQHRG) AnimeWorld | 🏴󠁧󠁢󠁥󠁮󠁧󠁿 🇮🇳 | Anime | 1080p / 720p | ✅ | ✅ |
 [![brazuca.png](https://i.postimg.cc/zXyCHr7c/brazuca.png)](https://postimg.cc/bsjD44Kx) Brazuca Play | 🏴󠁧󠁢󠁥󠁮󠁧󠁿 🇵🇹 🇧🇷 | Film & Serial | 1080p / 720p | ✅ | ✅ |
 [![castle.png](https://i.postimg.cc/4yqkvYvX/castle.png)](https://postimg.cc/gLVTmkB7) Castle | 🏴󠁧󠁢󠁥󠁮󠁧󠁿  | Film & Serial | 1080p / 720p | ✅ | ✅ |
 [![dhamermovies.png](https://i.postimg.cc/jdZ9VgDq/dhamermovies.png)](https://postimg.cc/svGK7JPb) Dahmermovies | 🏴󠁧󠁢󠁥󠁮󠁧󠁿  | Film & Serial | 4K / 1080p / 720p | ✅ | ✅ |
