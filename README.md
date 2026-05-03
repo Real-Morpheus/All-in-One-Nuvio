@@ -30,6 +30,7 @@ A collection of high-quality local scrapers for the Nuvio streaming application.
 [![movix.jpg](https://i.postimg.cc/VNrWycrg/movix.jpg)](https://postimg.cc/CZ0qDX4n) Movix | 🏴󠁧󠁢󠁥󠁮󠁧󠁿 🇫🇷 | Film & Serial | 1080p / 720p | ✅ | ✅ |
 [![netmirror.png](https://i.postimg.cc/sXFMmJyg/netmirror.png)](https://postimg.cc/B8gZQHXr) Netmirror | 🏴󠁧󠁢󠁥󠁮󠁧󠁿 | Film & Serial | 1080p / 720p | ✅ | ✅ |
 [![onetouchtv.png](https://i.postimg.cc/MKsp4xjy/onetouchtv.png)](https://postimg.cc/kBbC60s4) OneTouchTV | 🇰🇷 🇨🇳 🇯🇵 | Asian Movies / Drama | 720p | ✅ | ✅ |
+[![onlykdrama.jpg](https://i.postimg.cc/7PjN888q/onlykdrama.jpg)](https://postimg.cc/DmdGLNwN) OnlyKDrama | 🇰🇷 | Asian Movies / Drama | 1080p/ 720p | ✅ | ✅ |
 [![showbox.png](https://i.postimg.cc/nzzVyqYQ/showbox.png)](https://postimg.cc/67kNR2P9) ShowBox | 🏴󠁧󠁢󠁥󠁮󠁧󠁿 | Film & Serial | 4K 1080p / 720p | ✅ | ❌ |
 [![streamflix.png](https://i.postimg.cc/sXFMmJyD/streamflix.png)](https://postimg.cc/McDZKVvh) Streamflix | 🏴󠁧󠁢󠁥󠁮󠁧󠁿 | Film & Serial | 1080p / 720p | ✅ | ✅ |
 | [![uhdmovies.png](https://i.postimg.cc/VkCg1svN/uhdmovies.png)](https://postimg.cc/3k3mFTgM) UHDMovies | 🏴󠁧󠁢󠁥󠁮󠁧󠁿 🇮🇳 | Film & Serial | 4K / 1080p / 720p | ✅ | ✅ |
