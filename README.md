@@ -25,7 +25,7 @@ A collection of high-quality local scrapers for the Nuvio streaming application.
 [![dooflix.png](https://i.postimg.cc/B6Q28JSt/dooflix.png)](https://postimg.cc/Y4ZvZKmw)  DooFlix | 🏴󠁧󠁢󠁥󠁮󠁧󠁿 🇮🇳 | Film & Serial | 1080p / 720p | ✅ | ✅ |
 | [![download-(2).png](https://i.postimg.cc/cJ6s6jq8/download-(2).png)](https://postimg.cc/CZTyQcxF) HDHub4U | 🏴󠁧󠁢󠁥󠁮󠁧󠁿 🇮🇳 | Film & Serial | 4K / 1080p / 720p | ✅ | ✅ |
 | [![kisskh.png](https://i.postimg.cc/Qdwzkn9d/kisskh.png)](https://postimg.cc/K17QmfD6) KissKH | 🇰🇷 🇨🇳 🇯🇵 | Asian Movies / Drama | 1080p / 720p | ✅ | ✅ |
-[![movieblast.png](https://i.postimg.cc/5yhYZ3DZ/movieblast.png)](https://postimg.cc/5Qm2zw43) MoviesBlast | 🏴󠁧󠁢󠁥󠁮󠁧󠁿 🇮🇳 | Film & Serial | 1080p / 720p | ✅ | ✅ |
+[![movieblast.png](https://i.postimg.cc/5yhYZ3DZ/movieblast.png)](https://postimg.cc/5Qm2zw43) MovieBlast | 🏴󠁧󠁢󠁥󠁮󠁧󠁿 🇮🇳 | Film & Serial | 1080p / 720p | ✅ | ✅ |
 [![moviesdrive.png](https://i.postimg.cc/PrKhFqtK/moviesdrive.png)](https://postimg.cc/56HZXbQF) MoviesDrive | 🏴󠁧󠁢󠁥󠁮󠁧󠁿 | Film & Serial | 4K / 1080p / 720p | ✅ | ✅ |
 [![movix.jpg](https://i.postimg.cc/VNrWycrg/movix.jpg)](https://postimg.cc/CZ0qDX4n) Movix | 🏴󠁧󠁢󠁥󠁮󠁧󠁿 🇫🇷 | Film & Serial | 1080p / 720p | ✅ | ✅ |
 [![netmirror.png](https://i.postimg.cc/sXFMmJyg/netmirror.png)](https://postimg.cc/B8gZQHXr) Netmirror | 🏴󠁧󠁢󠁥󠁮󠁧󠁿 | Film & Serial | 1080p / 720p | ✅ | ✅ |
