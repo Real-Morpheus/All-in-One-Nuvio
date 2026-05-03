@@ -28,6 +28,7 @@ A collection of high-quality local scrapers for the Nuvio streaming application.
 [![moviesdrive.png](https://i.postimg.cc/PrKhFqtK/moviesdrive.png)](https://postimg.cc/56HZXbQF) MoviesDrive | 🏴󠁧󠁢󠁥󠁮󠁧󠁿 | Film & Serial | 4K / 1080p / 720p | ✅ | ✅ |
 [![movix.jpg](https://i.postimg.cc/VNrWycrg/movix.jpg)](https://postimg.cc/CZ0qDX4n) Movix | 🏴󠁧󠁢󠁥󠁮󠁧󠁿 🇫🇷 | Film & Serial | 1080p / 720p | ✅ | ✅ |
 [![netmirror.png](https://i.postimg.cc/sXFMmJyg/netmirror.png)](https://postimg.cc/B8gZQHXr) Netmirror | 🏴󠁧󠁢󠁥󠁮󠁧󠁿 | Film & Serial | 1080p / 720p | ✅ | ✅ |
+[![onetouchtv.png](https://i.postimg.cc/MKsp4xjy/onetouchtv.png)](https://postimg.cc/kBbC60s4) OneTouchTV | 🇰🇷 🇨🇳 🇯🇵 | Asian Movies / Drama | 720p | ✅ | ✅ |
 [![showbox.png](https://i.postimg.cc/nzzVyqYQ/showbox.png)](https://postimg.cc/67kNR2P9) ShowBox | 🏴󠁧󠁢󠁥󠁮󠁧󠁿 | Film & Serial | 4K 1080p / 720p | ✅ | ❌ |
 [![streamflix.png](https://i.postimg.cc/sXFMmJyD/streamflix.png)](https://postimg.cc/McDZKVvh) Streamflix | 🏴󠁧󠁢󠁥󠁮󠁧󠁿 | Film & Serial | 1080p / 720p | ✅ | ✅ |
 | [![uhdmovies.png](https://i.postimg.cc/VkCg1svN/uhdmovies.png)](https://postimg.cc/3k3mFTgM) UHDMovies | 🏴󠁧󠁢󠁥󠁮󠁧󠁿 🇮🇳 | Film & Serial | 4K / 1080p / 720p | ✅ | ✅ |
@@ -44,37 +45,6 @@ A collection of high-quality local scrapers for the Nuvio streaming application.
 - 🌍 Multi-language support
 - ⚡ Fast and reliable scraping
 - 🔒 Proper headers and referer handling
-
-## How It Works
-
-1. Search for a movie or TV show in Nuvio
-2. The scraper fetches content metadata from TMDB
-3. It searches the streaming provider for matching content
-4. Returns available streams with quality information
-5. Select a stream and play     
-
-## Troubleshooting
-
-### No Streams Found
-- Ensure you have a stable internet connection
-- Try searching for popular content
-- Check if the provider is enabled in settings
-
-### Slow Loading
-- Providers may take 5-15 seconds to search
-- This is normal due to multiple HTTP requests
-- Patient waiting is required
-
-### Streams Won't Play
-- Try opening in an external player
-- Check if the stream URL is accessible from your region
-- Some streams may be region-restricted
-
-## Requirements
-
-- Nuvio app (latest version recommended)
-- Stable internet connection
-- JavaScript enabled in Nuvio
 
 ## Performance
 
