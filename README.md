@@ -1,6 +1,12 @@
-# Nuvio Providers - Compiled by =[D3adly]=
+# Nuvio Plugins - Compiled by =[D3adly]=
 
 A collection of high-quality local scrapers for the Nuvio streaming application. These scrapers allow you to fetch premium streams from various sources directly within the app.
+
+# My Other Repo's
+• All Anime - https://github.com/D3adlyRocket/Anime-Nuvio
+• All Hindi - https://github.com/D3adlyRocket/Hindi-Nuvio
+• Android TV - https://github.com/D3adlyRocket/Nuvio-TV
+• Showbox Private - https://github.com/D3adlyRocket/ShowboxTV
 
 ## Installation
 
