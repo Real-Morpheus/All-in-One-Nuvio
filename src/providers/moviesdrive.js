@@ -8,7 +8,7 @@ const TMDB_API_KEY = '439c478a771f35c05022f9feabcca01c';
 const TMDB_BASE_URL = 'https://api.themoviedb.org/3';
 
 // Moviesdrive Configuration
-let MAIN_URL = "https://moviesdrive.forum";
+let MAIN_URL = "https://new2.moviesdrives.my";
 // FIX #1: Correct repo (SaurabhKaperwan/Utils) and correct JSON key (moviesdrive lowercase)
 const DOMAINS_URL = "https://raw.githubusercontent.com/SaurabhKaperwan/Utils/refs/heads/main/urls.json";
 const DOMAIN_CACHE_TTL = 4 * 60 * 60 * 1000; // 4 hours
