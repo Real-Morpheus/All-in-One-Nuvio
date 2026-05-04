@@ -251,6 +251,19 @@
       "contentLanguage": ["en", "hi"]
     },
     {
+      "id": "gramcinema",
+      "name": "GramCinema",
+      "description": "Premium 4K & 1080p multilingual streams",
+      "version": "1.0.0",
+      "author": "MultiSource",
+      "supportedTypes": ["movie", "tv"],
+      "filename": "providers/gramcinema.js",
+      "enabled": true,
+      "formats": ["mp4", "mkv"],
+      "logo": "https://i.postimg.cc/WbNPW7Jv/gramcinema.png",
+      "contentLanguage": ["en", "hi", "ta", "te"]
+    },
+    {
       "id": "fmovies",
       "name": "FMovies+",
       "description": "Hindi Dubbed Movies/Series",
