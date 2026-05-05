@@ -224,6 +224,84 @@ async function getCurrentDomain() {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// NEW: search‑recover.php handler (mirrors scraper.py bypass_hubcloud)
+// ─────────────────────────────────────────────────────────────────────────────
+async function resolveSearchRecover(url, referer) {
+    try {
+        const parsed = new URL(url);
+        const qs = parsed.searchParams;
+        const fromAc = qs.get('from_ac');
+        let qEncoded = qs.get('q');
+        if (!fromAc || !qEncoded) return [url]; // not a recover link, fallback
+
+        // Try to decode base64 q (like Python)
+        let query = qEncoded;
+        try {
+            const decoded = Buffer.from(qEncoded, 'base64').toString('utf-8');
+            if (decoded && /^[a-zA-Z0-9\s.\-:]+$/.test(decoded)) query = decoded;
+        } catch (_) {}
+
+        // HubCloud recover API (using hubcloud.foo as in Python)
+        const apiUrl = `https://hubcloud.foo/drive/search-recover.php?api=search&q=${encodeURIComponent(query)}&page=1&from_ac=${fromAc}`;
+        const resp = await fetch(apiUrl, {
+            headers: { 'Accept': 'application/json', 'User-Agent': HEADERS['User-Agent'] }
+        });
+        if (!resp.ok) return [url];
+        const data = await resp.json();
+        if (data?.hits?.length) {
+            return data.hits.map(hit => hit.url);
+        }
+    } catch (e) {
+        console.error('[SearchRecover] error:', e.message);
+    }
+    return [url]; // fallback to original URL
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// NEW: Generate‑link page handler (mirrors scraper.py get_final_link)
+// ─────────────────────────────────────────────────────────────────────────────
+async function resolveGenerateLink(url, referer) {
+    try {
+        const resp = await fetch(url, { headers: { ...HEADERS, Referer: referer || MAIN_URL } });
+        const html = await resp.text();
+        const $ = cheerio.load(html);
+
+        // Find the "Generate Direct Download Link" button (a#download as in Python)
+        let genLink = $('#download').attr('href');
+        if (!genLink) {
+            // Try any link with hubrouting|generate|gamerxyt in href
+            const altLinks = $('a[href]').filter((i, el) =>
+                /hubrouting|generate|gamerxyt/i.test($(el).attr('href'))
+            );
+            if (altLinks.length) genLink = altLinks.first().attr('href');
+        }
+        if (!genLink) return [];
+
+        // Follow generator page
+        const genUrl = new URL(genLink, url).toString();
+        const genResp = await fetch(genUrl, { headers: { ...HEADERS, Referer: url } });
+        const genHtml = await genResp.text();
+        const $$ = cheerio.load(genHtml);
+
+        // Collect all "Download [" links (exact text match from Python)
+        const finalLinks = [];
+        $$('a[href]').each((_, el) => {
+            const text = $$(el).text().trim();
+            if (/^Download \[/.test(text)) {
+                finalLinks.push({
+                    name: text,
+                    url: $$(el).attr('href')
+                });
+            }
+        });
+        return finalLinks;
+    } catch (e) {
+        console.error('[GenerateLink] error:', e.message);
+        return [];
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // EXTRACTORS  (mirrors Extractors.kt — HubCloud, GDFlix, Pixeldrain, StreamTape)
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -536,6 +614,7 @@ async function hubCdnExtractor(url, referer) {
 /**
  * Main extractor dispatcher — mirrors Kotlin's loadExtractor() routing.
  * Routes by hostname to the correct extractor function.
+ * Now also handles search‑recover.php and generate‑link pages.
  */
 async function loadExtractor(url, referer = MAIN_URL) {
     let hostname;
@@ -560,6 +639,34 @@ async function loadExtractor(url, referer = MAIN_URL) {
         return hbLinksExtractor(url, referer);
     if (hostname.includes('hubcdn'))
         return hubCdnExtractor(url, referer);
+
+    // ── NEW: Handle main site links ─────────────────────────────────────────
+    const currentDomain = new URL(MAIN_URL).hostname;
+    if (hostname === currentDomain || hostname === new URL(MAIN_URL).hostname) {
+        // If it's a search‑recover.php URL, resolve it and then extract recursively
+        if (url.includes('search-recover.php')) {
+            const resolved = await resolveSearchRecover(url, referer);
+            const allLinks = [];
+            for (const u of resolved) {
+                // for each resolved hubcloud link, call loadExtractor again
+                const extracted = await loadExtractor(u, referer);
+                allLinks.push(...extracted);
+            }
+            return allLinks;
+        }
+
+        // If it's a page with a generate‑link button
+        const genLinks = await resolveGenerateLink(url, referer);
+        if (genLinks.length > 0) {
+            return genLinks.map(gl => ({
+                source: `MoviesDrive [Generate]`,
+                quality: 0,
+                url: gl.url,
+                fileName: gl.name,
+                size: 0,
+            }));
+        }
+    }
 
     // Unknown host — pass through
     return [{ source: hostname.replace(/^www\./, ''), quality: 0, url }];
@@ -643,7 +750,17 @@ async function getDownloadLinks(mediaUrl, season, episode) {
         console.log(`[MoviesDrive] Movie: ${h5Links.length} h5 links`);
 
         const allServerUrls = (await Promise.all(h5Links.map(extractHosterLinksFromPage))).flat();
-        const uniqueServerUrls = [...new Set(allServerUrls)];
+        // ── NEW: pre‑resolve search‑recover.php links ─────────────────
+        const resolvedServerUrls = [];
+        for (const u of allServerUrls) {
+            if (u.includes('search-recover.php')) {
+                const resolved = await resolveSearchRecover(u, mediaUrl);
+                resolvedServerUrls.push(...resolved);
+            } else {
+                resolvedServerUrls.push(u);
+            }
+        }
+        const uniqueServerUrls = [...new Set(resolvedServerUrls)];
 
         const results = await Promise.all(uniqueServerUrls.map(u => loadExtractor(u, mediaUrl).catch(() => [])));
         const flat = results.flat();
@@ -718,12 +835,23 @@ async function getDownloadLinks(mediaUrl, season, episode) {
         }
     }))).flat();
 
-    if (!episodeHosterUrls.length) {
+    // ── NEW: pre‑resolve search‑recover.php links in TV flow ─────────
+    const resolvedEpisodeUrls = [];
+    for (const u of episodeHosterUrls) {
+        if (u.includes('search-recover.php')) {
+            const resolved = await resolveSearchRecover(u, singleEpUrls[0]);
+            resolvedEpisodeUrls.push(...resolved);
+        } else {
+            resolvedEpisodeUrls.push(u);
+        }
+    }
+
+    if (!resolvedEpisodeUrls.length) {
         console.error('[MoviesDrive] No hoster links for episode', episode);
         return { finalLinks: [], isMovie: false };
     }
 
-    const tvResults = await Promise.all(episodeHosterUrls.map(u => loadExtractor(u, singleEpUrls[0]).catch(() => [])));
+    const tvResults = await Promise.all(resolvedEpisodeUrls.map(u => loadExtractor(u, singleEpUrls[0]).catch(() => [])));
     const tvFlat = tvResults.flat();
     const seenTv = new Set();
     return {
