@@ -1,4 +1,4 @@
-// MoviesDrive Provider Plugin (nuvio) – self‑contained, correct endpoint selection
+// MoviesDrive Provider Plugin (nuvio) – accurate season matching
 
 var __defProp = Object.defineProperty;
 var __defProps = Object.defineProperties;
@@ -55,7 +55,7 @@ const DOMAIN_CACHE_TTL = 60 * 60 * 1000;
 function makeRequest(url, options = {}) {
   return __async(this, null, function* () {
     const defaultHeaders = {
-      "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+      "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
       "Accept": "application/json",
     };
     const opts = __spreadProps(__spreadValues({}, options), {
@@ -67,23 +67,26 @@ function makeRequest(url, options = {}) {
   });
 }
 
-// Simple best match: score on title + year
-function findBestMatch(mainTitle, year, results) {
-  if (!results || results.length === 0) return null;
-  // Prefer exact year match
-  const yearStr = year ? String(year) : "";
-  let best = results[0];
-  let bestScore = 0;
-  for (const r of results) {
-    let score = 0;
-    if (r.title.toLowerCase().includes(mainTitle.toLowerCase())) score += 10;
-    if (yearStr && r.title.includes(yearStr)) score += 20;
-    if (score > bestScore) {
-      bestScore = score;
-      best = r;
-    }
+// Extracts season number from title, returns -1 if not found
+function extractSeason(title) {
+  const patterns = [
+    /(?:Season|S)\s*(\d+)/i,
+    /\(\s*S(\d+)/i,
+    /S(\d{2})\s/i,
+  ];
+  for (const p of patterns) {
+    const m = title.match(p);
+    if (m) return parseInt(m[1]);
   }
-  return best;
+  // Another common pattern: "Season 2" in text
+  const m2 = title.match(/Season\s*(\d+)/i);
+  if (m2) return parseInt(m2[1]);
+  return -1;
+}
+
+// Detect if title looks like a series (contains "Season" or "Complete Web Series")
+function isSeries(title) {
+  return /season|complete web series|episode|S\d{2}/i.test(title);
 }
 
 // -------------- DOMAIN RESOLVER --------------
@@ -109,7 +112,7 @@ function getMoviesDriveDomain() {
   });
 }
 
-// -------------- SEARCH (directly on MoviesDrive) --------------
+// -------------- SEARCH (MoviesDrive native) --------------
 function searchMoviesDrive(query) {
   return __async(this, null, function* () {
     const domain = yield getMoviesDriveDomain();
@@ -128,7 +131,7 @@ function searchMoviesDrive(query) {
       "Sec-Fetch-Dest": "empty",
       "Sec-Fetch-Mode": "cors",
       "Sec-Fetch-Site": "same-origin",
-      "User-Agent": "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Mobile Safari/537.36"
+      "User-Agent": "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 Chrome/124.0.0.0 Mobile Safari/537.36"
     };
     try {
       const res = yield makeRequest(apiUrl, { headers: searchHeaders });
@@ -137,6 +140,7 @@ function searchMoviesDrive(query) {
         return data.hits.map(hit => ({
           title: hit.document.post_title,
           permalink: hit.document.permalink,
+          imdb_id: hit.document.imdb_id || ""
         }));
       }
     } catch (e) {
@@ -162,7 +166,7 @@ function getStreams(tmdbId, mediaType, seasonNum, episodeNum) {
       const domain = yield getMoviesDriveDomain();
       if (!domain) return [];
 
-      // 2. Search MoviesDrive – different query for movies / series
+      // 2. Search MoviesDrive – use title + season if TV
       let query;
       if (mediaType === "tv") {
         query = `${title} Season ${seasonNum || 1}`;
@@ -170,19 +174,40 @@ function getStreams(tmdbId, mediaType, seasonNum, episodeNum) {
         query = title;
       }
       let results = yield searchMoviesDrive(query);
+      // Fallback: search without season if no results
       if (results.length === 0 && mediaType === "tv") {
-        // fallback: search without season
         results = yield searchMoviesDrive(title);
       }
       if (results.length === 0) return [];
 
-      const selected = findBestMatch(title, year, results);
+      // 3. Pick the best matching result
+      let selected = null;
+      if (mediaType === "tv") {
+        // Filter results that look like series
+        const seriesResults = results.filter(r => isSeries(r.title));
+        if (seriesResults.length > 0) {
+          // Prefer exact season match
+          const targetSeason = seasonNum || 1;
+          selected = seriesResults.find(r => extractSeason(r.title) === targetSeason);
+          if (!selected) {
+            // Fallback: any series result (maybe no season in title)
+            selected = seriesResults[0];
+          }
+        } else {
+          // Fallback to first result
+          selected = results[0];
+        }
+      } else {
+        // Movie: pick first that isn't obviously a series, or just first after year matching
+        selected = results.find(r => !isSeries(r.title) && year && r.title.includes(year)) || results[0];
+      }
+
       if (!selected) return [];
       console.log("[MoviesDrive] Selected:", selected.title);
 
       const pageUrl = domain + selected.permalink;
 
-      // 3. Fetch links from the correct HF endpoint
+      // 4. Call the correct HF endpoint
       let rawLinks = [];
       if (mediaType === "movie") {
         const movieUrl = `${HF_MOVIE_API}?url=${encodeURIComponent(pageUrl)}`;
@@ -190,21 +215,20 @@ function getStreams(tmdbId, mediaType, seasonNum, episodeNum) {
         const movieData = yield movieRes.json();
         if (movieData && movieData.links) rawLinks = movieData.links;
       } else {
-        // TV – get all episodes, then filter by season/episode
         const seriesUrl = `${HF_SERIES_API}?url=${encodeURIComponent(pageUrl)}`;
         const seriesRes = yield makeRequest(seriesUrl);
         const seriesData = yield seriesRes.json();
         if (seriesData && seriesData.episodes) {
-          const targetSeason = seasonNum || 1;
-          const targetEpisode = episodeNum || 1;
-          const ep = seriesData.episodes.find(e => e.season == targetSeason && e.episode == targetEpisode);
+          const targetS = seasonNum || 1;
+          const targetE = episodeNum || 1;
+          const ep = seriesData.episodes.find(e => e.season == targetS && e.episode == targetE);
           if (ep && ep.links) rawLinks = ep.links;
         }
       }
 
       if (!rawLinks || rawLinks.length === 0) return [];
 
-      // 4. Build streams – API already provides stream_title
+      // 5. Build streams using the API's stream_title
       const streams = rawLinks.map(link => ({
         name: `MoviesDrive ${link.name || "Direct"}`,
         title: link.stream_title || `${title} - ${link.quality || "?"}p`,
@@ -217,11 +241,7 @@ function getStreams(tmdbId, mediaType, seasonNum, episodeNum) {
         },
       }));
 
-      streams.sort((a, b) => {
-        const qA = parseInt(a.quality) || 0;
-        const qB = parseInt(b.quality) || 0;
-        return qB - qA;
-      });
+      streams.sort((a, b) => (parseInt(b.quality) || 0) - (parseInt(a.quality) || 0));
       console.log(`[MoviesDrive] Returning ${streams.length} streams`);
       return streams;
     } catch (e) {
