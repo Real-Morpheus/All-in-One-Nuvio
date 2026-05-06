@@ -1,4 +1,5 @@
-// MoviesDrive Provider Plugin (nuvio) – robust search & endpoint routing
+// MoviesDrive Provider Plugin (nuvio)
+// Searches MoviesDrive directly, picks the correct page, uses /movie or /series endpoint
 
 var __defProp = Object.defineProperty;
 var __defProps = Object.defineProperties;
@@ -44,7 +45,7 @@ var __async = (__this, __arguments, generator) => {
 const TMDB_API_KEY = "439c478a771f35c05022f9feabcca01c";
 const DOMAIN_JSON_URL = "https://himanshu8443.github.io/providers/modflix.json";
 const PROVIDER_KEY = "drive";
-const HF_API_BASE = "https://badboysxs-md.hf.space";  // your HF space
+const HF_API_BASE = "https://badboysxs-md.hf.space";   // <-- your HF space URL
 const HF_MOVIE_API = HF_API_BASE + "/movie";
 const HF_SERIES_API = HF_API_BASE + "/series";
 let moviesDriveDomain = "";
@@ -67,17 +68,16 @@ function makeRequest(url, options = {}) {
   });
 }
 
-// Extract season number from title (e.g., "Season 2" → 2)
+// Extract season number from title (e.g., "Season 2" → 2, "S02" → 2)
 function extractSeason(title) {
   const m = title.match(/Season\s*(\d+)/i);
   if (m) return parseInt(m[1]);
-  // Alternative: "S02" format
   const alt = title.match(/\bS(\d{2})\b/i);
   if (alt) return parseInt(alt[1]);
   return -1;
 }
 
-// Is the title a series? (contains "Season", "Complete Web Series", "Episode", "S0x")
+// Detect if title is a series (contains "Season", "Complete Web Series", "Episode", "S0x")
 function isSeries(title) {
   return /season|complete web series|episode|s\d{2}/i.test(title);
 }
@@ -105,7 +105,7 @@ function getMoviesDriveDomain() {
   });
 }
 
-// --------------- SEARCH ---------------
+// --------------- SEARCH (MoviesDrive native) ---------------
 function searchMoviesDrive(query) {
   return __async(this, null, function* () {
     const domain = yield getMoviesDriveDomain();
@@ -154,21 +154,26 @@ function getStreams(tmdbId, mediaType, seasonNum, episodeNum) {
       const year = (mediaType === "tv" ? tmdbData.first_air_date : tmdbData.release_date)?.substring(0, 4) || "";
       if (!title) return [];
 
-      // 2. Search MoviesDrive
-      let query = title;
+      // 2. Build search query: for series include season, for movies just title
+      let query;
       if (mediaType === "tv") {
+        // Example: "Daredevil Season 2" – no episode number in the search!
         query = `${title} Season ${seasonNum || 1}`;
+      } else {
+        query = title;
       }
       let results = yield searchMoviesDrive(query);
+
+      // Fallback: if no results with season, search without season
       if (results.length === 0 && mediaType === "tv") {
-        results = yield searchMoviesDrive(title); // fallback
+        results = yield searchMoviesDrive(title);
       }
       if (results.length === 0) return [];
 
       // 3. Pick the correct result
       let selected;
       if (mediaType === "movie") {
-        // prefer movie-looking results, then year
+        // Prefer non-series results, then year matching
         const movies = results.filter(r => !isSeries(r.title));
         if (movies.length > 0) {
           selected = movies.find(r => year && r.title.includes(year)) || movies[0];
@@ -176,13 +181,13 @@ function getStreams(tmdbId, mediaType, seasonNum, episodeNum) {
           selected = results.find(r => year && r.title.includes(year)) || results[0];
         }
       } else {
-        // TV: pick first series result that matches the season
+        // TV: pick series results that match the season
         const seriesResults = results.filter(r => isSeries(r.title));
         const targetSeason = seasonNum || 1;
         selected = seriesResults.find(r => extractSeason(r.title) === targetSeason);
-        if (!selected) {
-          // fallback to any series result (maybe season not in title)
-          selected = seriesResults.find(r => isSeries(r.title));
+        if (!selected && seriesResults.length > 0) {
+          // Fallback: any series result (maybe season not in title)
+          selected = seriesResults[0];
         }
         if (!selected) selected = results[0]; // last resort
       }
@@ -213,7 +218,7 @@ function getStreams(tmdbId, mediaType, seasonNum, episodeNum) {
       }
       if (!rawLinks || rawLinks.length === 0) return [];
 
-      // 5. Build streams using stream_title
+      // 5. Build streams using the API's stream_title
       return rawLinks.map(link => ({
         name: `MoviesDrive ${link.name || "Direct"}`,
         title: link.stream_title || `${title} - ${link.quality || "?"}p`,
