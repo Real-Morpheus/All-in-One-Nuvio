@@ -1,15 +1,12 @@
 /**
- * MoviesDrive FSL/FSLv2 – Nuvio Plugin
+ * MoviesDrive FSL/FSLv2 – Nuvio Plugin (no external deps)
  * Scrapes MoviesDrive via HubCloud / GDFlix.
+ * 
+ * Uses: fetch, AbortSignal.timeout, DOMParser (available in all modern JS runtimes).
  */
-const cheerio = require('cheerio');
-
-// ─────────────────────────────────────────────
-// CONSTANTS
-// ─────────────────────────────────────────────
 const GITHUB_URLS_JSON = "https://raw.githubusercontent.com/SaurabhKaperwan/Utils/refs/heads/main/urls.json";
 const CINEMETA_BASE    = "https://v3-cinemeta.strem.io";
-const DEFAULT_MD_URL   = "https://new2.moviesdrives.my";
+const DEFAULT_MD_URL   = "https://new2.moviesdrives.my";   // ✅ updated
 
 const HEADERS = {
   "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
@@ -24,9 +21,7 @@ const FUZZY_THRESHOLD = 58;
 let dynUrls = {};
 let dynFetched = false;
 
-// ─────────────────────────────────────────────
-// UTILITY HELPERS
-// ─────────────────────────────────────────────
+// ── helpers ──────────────────────────────────────────────
 function origin(url) {
   const u = new URL(url);
   return u.origin;
@@ -73,7 +68,6 @@ function streamDescription(filename, size, server) {
   return { name, desc };
 }
 
-// Simple token-set ratio (0-100) for fuzzy matching
 function tokenSetRatio(a, b) {
   const toks = s => new Set(s.replace(/[^\w\s]/g, '').toLowerCase().split(/\s+/).filter(Boolean));
   const setA = toks(a);
@@ -83,9 +77,7 @@ function tokenSetRatio(a, b) {
   return Math.round((intersection / Math.min(setA.size, setB.size)) * 100);
 }
 
-// ─────────────────────────────────────────────
-// DYNAMIC URL FETCH
-// ─────────────────────────────────────────────
+// ── dynamic URLs ─────────────────────────────────────────
 async function fetchDynamicUrls() {
   if (dynFetched) return dynUrls;
   try {
@@ -104,9 +96,7 @@ async function dynBase(source, fallback) {
   return urls[source] || fallback;
 }
 
-// ─────────────────────────────────────────────
-// CINEMETA META RESOLUTION
-// ─────────────────────────────────────────────
+// ── Cinemeta resolution ──────────────────────────────────
 async function cinemetaMeta(session, type, id) {
   try {
     const res = await fetch(`${CINEMETA_BASE}/meta/${type}/${id}.json`, {
@@ -123,15 +113,12 @@ async function cinemetaMeta(session, type, id) {
 }
 
 async function resolveId(session, type, rawId) {
-  // rawId is always the numeric TMDB ID from getStreams
   const tmdbId = `tmdb:${rawId}`;
   const meta = await cinemetaMeta(session, type, tmdbId);
   return { meta };
 }
 
-// ─────────────────────────────────────────────
-// MOVIESDRIVE SEARCH
-// ─────────────────────────────────────────────
+// ── MoviesDrive search ───────────────────────────────────
 async function mdSearch(session, query, base, page = 1) {
   const url = `${base}/search.php?q=${encodeURIComponent(query)}&page=${page}`;
   try {
@@ -173,19 +160,23 @@ function pickBest(results, target, year) {
   return bestItem;
 }
 
-// ─────────────────────────────────────────────
-// SOURCE COLLECTORS (MoviesDrive pages)
-// ─────────────────────────────────────────────
+// ── Lightweight DOM parsing (DOMParser) ──────────────────
+function parseHTML(html) {
+  const parser = new DOMParser();
+  return parser.parseFromString(html, 'text/html');
+}
+
+// ── Collect movie sources ────────────────────────────────
 const SRC_RE = /hubcloud|gdflix|gdlink/i;
 
 async function innerLinks(session, btnHref) {
   try {
     const res = await fetch(btnHref, { headers: HEADERS, signal: AbortSignal.timeout(10000) });
     const html = await res.text();
-    const $ = cheerio.load(html);
+    const doc = parseHTML(html);
     const links = [];
-    $('a[href]').each((i, el) => {
-      const href = $(el).attr('href');
+    doc.querySelectorAll('a[href]').forEach(a => {
+      const href = a.getAttribute('href');
       if (SRC_RE.test(href)) links.push(href);
     });
     return links;
@@ -198,10 +189,10 @@ async function innerLinks(session, btnHref) {
 async function collectMovieSources(session, pageUrl) {
   const res = await fetch(pageUrl, { headers: HEADERS, signal: AbortSignal.timeout(12000) });
   const html = await res.text();
-  const $ = cheerio.load(html);
-  const buttons = $('h5 > a').toArray();
+  const doc = parseHTML(html);
+  const buttons = doc.querySelectorAll('h5 > a');
   console.log('Movie page: found', buttons.length, 'quality buttons');
-  const tasks = buttons.map(btn => innerLinks(session, $(btn).attr('href')));
+  const tasks = Array.from(buttons).map(btn => innerLinks(session, btn.getAttribute('href')));
   const results = await Promise.allSettled(tasks);
   const sources = [];
   for (const r of results) {
@@ -210,11 +201,12 @@ async function collectMovieSources(session, pageUrl) {
   return sources;
 }
 
-function seasonFromContext(btn, $) {
-  let node = $(btn).parent()[0]; // <h5>
+// ── Season context from heading siblings ─────────────────
+function seasonFromContext(btn) {
+  let node = btn.parentElement;   // <h5>
   let prev = node.previousElementSibling;
   for (let i = 0; i < 6 && prev; i++) {
-    const txt = $(prev).text().trim();
+    const txt = prev.textContent.trim();
     const m = txt.match(/(?:season|S(?:eason)?)\s*(\d+)/i);
     if (m) return parseInt(m[1]);
     prev = prev.previousElementSibling;
@@ -222,13 +214,15 @@ function seasonFromContext(btn, $) {
   return 0; // unknown → accept all
 }
 
-function findEpSpans($) {
+// ── Episode page parsing ─────────────────────────────────
+function findEpSpans(doc) {
   const epPat = /\bEp(?:isode)?\s*0*(\d+)\b/i;
-  return $('span').toArray().filter(el => epPat.test($(el).text()));
+  return Array.from(doc.querySelectorAll('span')).filter(s => epPat.test(s.textContent));
 }
 
-async function parseEpisodePage($, season, episode) {
-  const epSpans = findEpSpans($);
+async function parseEpisodePage(html, season, episode) {
+  const doc = parseHTML(html);
+  const epSpans = findEpSpans(doc);
   const epNumPat = /\bEp(?:isode)?\s*0*(\d+)\b/i;
   const sources = [];
 
@@ -236,19 +230,18 @@ async function parseEpisodePage($, season, episode) {
   if (epSpans.length) {
     console.log(`    Episode page: ${epSpans.length} ep-spans (Strategy A)`);
     for (const span of epSpans) {
-      const epMatch = $(span).text().match(epNumPat);
-      if (!epMatch) continue;
-      const epNum = parseInt(epMatch[1]);
+      const match = span.textContent.match(epNumPat);
+      if (!match) continue;
+      const epNum = parseInt(match[1]);
       if (epNum !== episode) continue;
-      const row = $(span).parent()[0];
-      let sibling = row?.nextElementSibling;
+      let sibling = span.parentElement.nextElementSibling;
       while (sibling) {
-        const txt = $(sibling).text().toLowerCase();
+        const txt = sibling.textContent.toLowerCase();
         if (!/(hubcloud|gdflix|gdlink)/.test(txt)) break;
-        const a = $(sibling).find('a[href]');
-        if (a.length && SRC_RE.test(a.attr('href'))) {
-          sources.push(a.attr('href'));
-          console.log(`    A: Ep${epNum.toString().padStart(2,'0')} → ${a.attr('href').substring(0,70)}`);
+        const a = sibling.querySelector('a[href]');
+        if (a && SRC_RE.test(a.getAttribute('href'))) {
+          sources.push(a.getAttribute('href'));
+          console.log(`    A: Ep${epNum.toString().padStart(2,'0')} → ${a.href.substring(0,70)}`);
         }
         sibling = sibling.nextElementSibling;
       }
@@ -257,13 +250,13 @@ async function parseEpisodePage($, season, episode) {
   }
 
   // Strategy B: sequential anchors
-  const epAnchors = $('a[href]').toArray().filter(a => SRC_RE.test($(a).attr('href')));
+  const epAnchors = Array.from(doc.querySelectorAll('a[href]')).filter(a => SRC_RE.test(a.getAttribute('href')));
   console.log(`    Episode page: ${epAnchors.length} hub/gdflix anchors (Strategy B)`);
   if (epAnchors.length) {
     const idx = episode - 1;
     if (idx >= 0 && idx < epAnchors.length) {
-      sources.push($(epAnchors[idx]).attr('href'));
-      console.log(`    B: Ep${episode.toString().padStart(2,'0')} → ${$(epAnchors[idx]).attr('href').substring(0,70)}`);
+      sources.push(epAnchors[idx].getAttribute('href'));
+      console.log(`    B: Ep${episode.toString().padStart(2,'0')} → ${epAnchors[idx].getAttribute('href').substring(0,70)}`);
     } else {
       console.warn(`    B: episode ${episode} out of range (${epAnchors.length} anchors)`);
     }
@@ -274,26 +267,25 @@ async function parseEpisodePage($, season, episode) {
 async function collectEpisodeSources(session, pageUrl, season, episode) {
   const res = await fetch(pageUrl, { headers: HEADERS, signal: AbortSignal.timeout(12000) });
   const html = await res.text();
-  const $ = cheerio.load(html);
+  const doc = parseHTML(html);
 
-  const allButtons = $('h5 > a').toArray()
-    .filter(btn => !$(btn).text().toLowerCase().includes('zip'));
+  const allButtons = Array.from(doc.querySelectorAll('h5 > a'))
+    .filter(btn => !btn.textContent.toLowerCase().includes('zip'));
   console.log(`Series page: ${allButtons.length} quality buttons (S${season}E${episode})`);
 
   const matching = allButtons.filter(btn => {
-    const detected = seasonFromContext(btn, $);
+    const detected = seasonFromContext(btn);
     return detected === 0 || detected === season;
   });
   console.log(`After season filter: ${matching.length} button(s)`);
 
   const sources = [];
   const tasks = matching.map(async btn => {
-    const href = $(btn).attr('href');
+    const href = btn.getAttribute('href');
     if (!href) return [];
     const epRes = await fetch(href, { headers: HEADERS, signal: AbortSignal.timeout(12000) });
     const epHtml = await epRes.text();
-    const $ep = cheerio.load(epHtml);
-    return await parseEpisodePage($ep, season, episode);
+    return await parseEpisodePage(epHtml, season, episode);
   });
   const results = await Promise.allSettled(tasks);
   for (const r of results) {
@@ -303,9 +295,7 @@ async function collectEpisodeSources(session, pageUrl, season, episode) {
   return [...new Set(sources)];
 }
 
-// ─────────────────────────────────────────────
-// HUBCLOUD EXTRACTOR (FSL/FSLv2 only)
-// ─────────────────────────────────────────────
+// ── HubCloud extractor (FSL/FSLv2) ───────────────────────
 async function extractHubcloud(session, url) {
   const streams = [];
   try {
@@ -317,36 +307,42 @@ async function extractHubcloud(session, url) {
 
     // Step 1: get intermediate link
     const res1 = await fetch(url, { headers: HEADERS, signal: AbortSignal.timeout(10000) });
-    const html = await res1.text();
-    const $ = cheerio.load(html);
+    const html1 = await res1.text();
+    const doc1 = parseHTML(html1);
     let mid = '';
+
     if (url.includes('/video/')) {
-      const el = $('div.vd > center > a');
-      mid = el.attr('href') || '';
+      const el = doc1.querySelector('div.vd > center > a');
+      mid = el?.getAttribute('href') || '';
     } else {
-      const script = $('script').toArray().find(el => $(el).html()?.includes("var url = '"));
-      if (script) {
-        const match = $(script).html().match(/var url = '([^']+)'/);
-        mid = match ? match[1] : '';
+      // extract var url = '...' from script
+      const scripts = doc1.querySelectorAll('script');
+      for (const script of scripts) {
+        const text = script.textContent;
+        if (text.includes("var url = '")) {
+          const m = text.match(/var url = '([^']+)'/);
+          mid = m ? m[1] : '';
+          break;
+        }
       }
     }
+
     if (!mid) {
       console.debug('HubCloud: no intermediate link for', url);
       return streams;
     }
     if (!mid.startsWith('http')) mid = base + mid;
 
-    // Step 2: load download page
+    // Step 2: download page
     const res2 = await fetch(mid, { headers: HEADERS, signal: AbortSignal.timeout(10000) });
     const html2 = await res2.text();
-    const $2 = cheerio.load(html2);
-    const filename = $2('div.card-header').text().trim() || '';
-    const size = $2('i#size').text().trim() || '';
+    const doc2 = parseHTML(html2);
+    const filename = doc2.querySelector('div.card-header')?.textContent.trim() || '';
+    const size = doc2.querySelector('i#size')?.textContent.trim() || '';
 
-    // Step 3: ONLY FSL / FSLv2 buttons
-    $2('h2 a.btn').each((i, btn) => {
-      const label = $(btn).text().trim();
-      const href = $(btn).attr('href')?.trim();
+    doc2.querySelectorAll('h2 a.btn').forEach(btn => {
+      const label = btn.textContent.trim();
+      const href = btn.getAttribute('href')?.trim();
       if (!href) return;
       if (label.includes('FSL Server')) {
         streams.push({ server: 'FSL', url: href, filename, size });
@@ -364,9 +360,7 @@ async function extractHubcloud(session, url) {
   return streams;
 }
 
-// ─────────────────────────────────────────────
-// GDFLIX EXTRACTOR (FSL V2 only)
-// ─────────────────────────────────────────────
+// ── GDFlix extractor (FSL V2 only) ───────────────────────
 async function extractGdflix(session, url) {
   const streams = [];
   try {
@@ -376,18 +370,18 @@ async function extractGdflix(session, url) {
 
     const res = await fetch(url, { headers: HEADERS, signal: AbortSignal.timeout(10000) });
     const html = await res.text();
-    const $ = cheerio.load(html);
+    const doc = parseHTML(html);
 
     let filename = '', size = '';
-    $('li.list-group-item').each((i, el) => {
-      const text = $(el).text().trim();
+    doc.querySelectorAll('li.list-group-item').forEach(li => {
+      const text = li.textContent.trim();
       if (text.startsWith('Name')) filename = text.replace(/^Name\s*:\s*/, '').trim();
       else if (text.startsWith('Size')) size = text.replace(/^Size\s*:\s*/, '').trim();
     });
 
-    $('div.text-center a[href]').each((i, a) => {
-      const label = $(a).text().trim();
-      const href = $(a).attr('href')?.trim();
+    doc.querySelectorAll('div.text-center a[href]').forEach(a => {
+      const label = a.textContent.trim();
+      const href = a.getAttribute('href')?.trim();
       if (!href) return;
       if (/FSL\s*V2|FSLv2|FSLV2/i.test(label)) {
         streams.push({ server: 'FSLv2', url: href, filename, size });
@@ -402,17 +396,15 @@ async function extractGdflix(session, url) {
   return streams;
 }
 
-// ─────────────────────────────────────────────
-// MASTER STREAM RESOLVER – EXPORTED FUNCTION
-// ─────────────────────────────────────────────
+// ── EXPORTED GETSTREAMS ──────────────────────────────────
 async function getStreams(tmdbId, mediaType = "movie", season = null, episode = null) {
   console.log(`[MoviesDrive] Fetching streams for TMDB ID: ${tmdbId}, Type: ${mediaType}`);
   const type = mediaType;
 
-  // 0. Warm up dynamic URLs
+  // 0. Warm dynamic URLs
   await fetchDynamicUrls();
 
-  // 1. Resolve title via Cinemeta
+  // 1. Resolve title
   const { meta } = await resolveId(null, type, tmdbId);
   if (!meta) {
     console.warn(`No Cinemeta meta for ${type}/${tmdbId}`);
@@ -424,10 +416,10 @@ async function getStreams(tmdbId, mediaType = "movie", season = null, episode = 
 
   console.log(`▶ Searching for: ${title} (${year}) [${type}]`);
 
-  // 2. Get live MovieDrive base URL
+  // 2. Get live base URL
   const mdBase = await dynBase('moviesdrive', DEFAULT_MD_URL);
 
-  // 3. Search MoviesDrive
+  // 3. Search
   let query = year ? `${title} ${year}` : title;
   let results = await mdSearch(null, query, mdBase);
   if (!results.length && year) {
@@ -440,7 +432,7 @@ async function getStreams(tmdbId, mediaType = "movie", season = null, episode = 
   }
   console.log(`✔ Selected: ${match.title}  →  ${match.url}`);
 
-  // 4. Collect source URLs
+  // 4. Collect sources
   let sources;
   if (type === "series" && season !== null && season > 0) {
     sources = await collectEpisodeSources(null, match.url, season, episode);
@@ -467,7 +459,7 @@ async function getStreams(tmdbId, mediaType = "movie", season = null, episode = 
     if (r.status === 'fulfilled' && Array.isArray(r.value)) rawStreams.push(...r.value);
   }
 
-  // 6. Deduplicate by URL
+  // 6. Deduplicate
   const seen = new Set();
   const unique = rawStreams.filter(s => {
     if (seen.has(s.url)) return false;
@@ -476,7 +468,7 @@ async function getStreams(tmdbId, mediaType = "movie", season = null, episode = 
   });
   console.log(`Total FSL/FSLv2 streams found: ${unique.length}`);
 
-  // 7. Build final stream objects (like dooflix)
+  // 7. Build final stream objects
   return unique.map(s => {
     const { name, desc } = streamDescription(s.filename, s.size, s.server);
     return {
@@ -485,7 +477,7 @@ async function getStreams(tmdbId, mediaType = "movie", season = null, episode = 
       url: s.url,
       quality: qualityLabel(s.filename),
       headers: {
-        "Referer": "https://new2.moviesdrives.my/",   // common referer
+        "Referer": "https://new2.moviesdrives.my/",   // updated
         "User-Agent": HEADERS["User-Agent"]
       },
       provider: "moviesdrive"
