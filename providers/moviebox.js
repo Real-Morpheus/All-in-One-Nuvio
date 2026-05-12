@@ -20,7 +20,7 @@
 // Config
 // ─────────────────────────────────────────────────────────────────────────────
 
-var WORKER_BASE = 'https://moviebox.s4nch1tt.workers.dev';
+var WORKER_BASE = 'https://pvt.s4nch1tt.workers.dev';
 var TAG         = '[MovieBox]';
 
 // ─────────────────────────────────────────────────────────────────────────────
